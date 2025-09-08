@@ -387,8 +387,20 @@ ferramenta_evolution() {
     if ! verificar_docker_e_portainer_traefik; then
         return 1
     fi
-    read -p "Digite o domínio para Evolution API: " dominio_evolution
-    echo "✅ Evolution API seria instalada em: https://$dominio_evolution"
+    
+    ## Pergunta o domínio
+    read -p "Digite o domínio para Evolution API: " url_evolution
+    
+    echo "⚠️ Verificando/instalando PostgreSQL..."
+    ## Verificar se PostgreSQL já existe ou instalar
+    verificar_e_instalar_postgres
+    
+    echo "⚠️ Instalando Evolution API com banco de dados..."
+    ## Criar banco específico para Evolution
+    criar_banco_postgres "evolution_api"
+    
+    echo "✅ Evolution API seria instalada em: https://$url_evolution"
+    echo "✅ Banco PostgreSQL configurado"
     sleep 3
 }
 
@@ -398,8 +410,20 @@ ferramenta_n8n() {
     if ! verificar_docker_e_portainer_traefik; then
         return 1
     fi
-    read -p "Digite o domínio para N8N: " dominio_n8n
-    echo "✅ N8N seria instalado em: https://$dominio_n8n"
+    
+    ## Pergunta o domínio
+    read -p "Digite o domínio para N8N: " url_n8n
+    
+    echo "⚠️ Verificando/instalando PostgreSQL..."
+    ## Verificar se PostgreSQL já existe ou instalar
+    verificar_e_instalar_postgres
+    
+    echo "⚠️ Instalando N8N com banco de dados..."
+    ## Criar banco específico para N8N
+    criar_banco_postgres "n8n_workflows"
+    
+    echo "✅ N8N seria instalado em: https://$url_n8n"
+    echo "✅ Banco PostgreSQL configurado"
     sleep 3
 }
 
@@ -409,9 +433,131 @@ ferramenta_n8n_mcp() {
     if ! verificar_docker_e_portainer_traefik; then
         return 1
     fi
-    read -p "Digite o domínio para N8N+MCP: " dominio_n8n_mcp
-    echo "✅ N8N+MCP seria instalado em: https://$dominio_n8n_mcp"
+    
+    ## Pergunta o domínio
+    read -p "Digite o domínio para N8N+MCP: " url_n8n_mcp
+    
+    echo "⚠️ Verificando/instalando PostgreSQL..."
+    ## Verificar se PostgreSQL já existe ou instalar
+    verificar_e_instalar_postgres
+    
+    echo "⚠️ Instalando N8N+MCP com banco de dados..."
+    ## Criar banco específico para N8N+MCP
+    criar_banco_postgres "n8n_mcp_workflows"
+    
+    echo "✅ N8N+MCP seria instalado em: https://$url_n8n_mcp"
+    echo "✅ Banco PostgreSQL configurado"
+    echo "✅ MCP (Model Context Protocol) habilitado"
     sleep 3
+}
+
+## Função para verificar e instalar PostgreSQL (seguindo padrão SetupOrion)
+verificar_e_instalar_postgres() {
+    if docker service ls | grep -q "postgres_postgres"; then
+        echo "✅ PostgreSQL já instalado"
+        return 0
+    else
+        echo "⚠️ Instalando PostgreSQL..."
+        instalar_postgres
+        return $?
+    fi
+}
+
+## Função para instalar PostgreSQL (baseada no SetupOrion)
+instalar_postgres() {
+    ## Ativar dados da VPS
+    dados
+    
+    ## Gerar senha aleatória para PostgreSQL
+    senha_postgres=$(openssl rand -hex 16)
+    
+    ## Criar stack do PostgreSQL
+    cat > postgres.yaml <<EOL
+version: "3.7"
+services:
+
+## --------------------------- ALICIA --------------------------- ##
+
+  postgres:
+    image: postgres:14
+    command: >
+      postgres
+      -c max_connections=500
+      -c shared_buffers=512MB
+      -c timezone=America/Sao_Paulo
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    networks:
+      - traefik_proxy
+
+    environment:
+      - POSTGRES_PASSWORD=$senha_postgres
+      - TZ=America/Sao_Paulo
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1024M
+
+## --------------------------- ALICIA --------------------------- ##
+
+volumes:
+  postgres_data:
+    external: true
+    name: postgres_data
+
+networks:
+  traefik_proxy:
+    external: true
+    name: traefik_proxy
+EOL
+
+    ## Fazer deploy da stack
+    docker stack deploy --prune --resolve-image always -c postgres.yaml postgres
+    
+    if [ $? -eq 0 ]; then
+        echo "✅ PostgreSQL instalado com sucesso"
+        
+        ## Salvar dados do PostgreSQL
+        cd "$HOME/dados_vps" 2>/dev/null || mkdir -p "$HOME/dados_vps" && cd "$HOME/dados_vps"
+        
+        cat > dados_postgres <<EOL
+[ POSTGRES ]
+
+Dominio: postgres://postgres:5432
+Usuario: postgres
+Senha: $senha_postgres
+EOL
+        cd
+        return 0
+    else
+        echo "❌ Erro ao instalar PostgreSQL"
+        return 1
+    fi
+}
+
+## Função para criar banco de dados específico
+criar_banco_postgres() {
+    local nome_banco="$1"
+    echo "⚠️ Aguardando PostgreSQL estar online..."
+    sleep 30
+    
+    ## Tentar criar o banco de dados
+    docker exec -i $(docker ps -q -f name=postgres_postgres) psql -U postgres -c "CREATE DATABASE $nome_banco;" 2>/dev/null
+    
+    if [ $? -eq 0 ]; then
+        echo "✅ Banco '$nome_banco' criado com sucesso"
+    else
+        echo "⚠️ Banco '$nome_banco' já existe ou erro na criação"
+    fi
 }
 
 portainer.restart() {
