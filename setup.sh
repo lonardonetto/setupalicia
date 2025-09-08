@@ -116,11 +116,12 @@ menu_comandos(){
     echo -e ""
     echo -e "${verde}Acesso aos Serviços:${reset}"
     echo -e "${branco} • Traefik Dashboard: ${amarelo}http://IP_SERVIDOR:8080${reset}"
-    echo -e "${branco} • Portainer: ${amarelo}http://IP_SERVIDOR:9000${reset}"
-    echo -e "${branco} • Evolution/N8N/MCP: ${amarelo}https://SEU_DOMINIO.com${reset}"
+    echo -e "${branco} • Portainer: ${amarelo}https://portainer.SEUDOMINIO.com${reset}"
+    echo -e "${branco} • Evolution/N8N/MCP: ${amarelo}https://SEUSUBDOMINIO.SEUDOMINIO.com${reset}"
     echo -e ""
     echo -e "${verde}Funcionalidades SSL:${reset}"
-    echo -e "${branco} • Traefik: ${verde}Não precisa de domínio (somente IP)${reset}"
+    echo -e "${branco} • Traefik: ${verde}Dashboard sem SSL (IP:8080)${reset}"
+    echo -e "${branco} • Portainer: ${verde}SSL automático via Let's Encrypt${reset}"
     echo -e "${branco} • Aplicações: ${verde}SSL automático via Let's Encrypt${reset}"
     echo -e "${branco} • Redirecionamento: ${verde}HTTP -> HTTPS automático${reset}"
     echo -e ""
@@ -155,6 +156,7 @@ verificar_e_instalar_requisitos() {
     echo -e "${verde}🔍 Verificando pré-requisitos...${reset}"
     
     # Verificar conectividade
+    echo -e "${amarelo}⚠️  Testando conectividade com a internet...${reset}"
     if ! curl -sSf https://www.google.com >/dev/null 2>&1; then
         echo -e "${vermelho}❌ Erro: Sem conexão com a internet${reset}"
         return 1
@@ -162,17 +164,19 @@ verificar_e_instalar_requisitos() {
     echo -e "${verde}✅ Conectividade: OK${reset}"
     
     # Verificar se Docker está instalado
+    echo -e "${amarelo}⚠️  Verificando se Docker está instalado...${reset}"
     if ! command -v docker &> /dev/null; then
         echo -e "${amarelo}⚠️  Docker não encontrado. Instalando Docker...${reset}"
         curl -fsSL https://get.docker.com | sh
         systemctl enable docker
         systemctl start docker
-        echo -e "${verde}✅ Docker instalado!${reset}"
+        echo -e "${verde}✅ Docker instalado com sucesso!${reset}"
     else
         echo -e "${verde}✅ Docker: Já instalado${reset}"
     fi
     
-    # Inicializar Docker Swarm se não estiver ativo
+    # Verificar Docker Swarm
+    echo -e "${amarelo}⚠️  Verificando Docker Swarm...${reset}"
     SWARM_STATUS=$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null)
     if [ "$SWARM_STATUS" != "active" ]; then
         echo -e "${amarelo}⚠️  Inicializando Docker Swarm...${reset}"
@@ -183,14 +187,16 @@ verificar_e_instalar_requisitos() {
     fi
     
     # Criar diretórios necessários
+    echo -e "${amarelo}⚠️  Criando diretórios...${reset}"
     mkdir -p /root/dados_vps
-    echo -e "${verde}✅ Diretórios: Criados${reset}"
+    echo -e "${verde}✅ Diretórios criados${reset}"
     
     # Configurar rede do Docker Swarm
+    echo -e "${amarelo}⚠️  Configurando rede Docker Swarm...${reset}"
     docker network create --driver overlay --attachable traefik_proxy 2>/dev/null || true
-    echo -e "${verde}✅ Rede Swarm: Configurada${reset}"
+    echo -e "${verde}✅ Rede 'traefik_proxy' configurada${reset}"
     
-    echo -e "${verde}🎉 Todos os pré-requisitos estão prontos!${reset}"
+    echo -e "${verde}🎉 Todos os pré-requisitos instalados e configurados!${reset}"
     echo ""
     return 0
 }
@@ -221,24 +227,34 @@ ferramenta_traefik_e_portainer() {
         return 1
     fi
     
-    echo -e "${amarelo}Configuração Docker Swarm:${reset}"
-    echo -e "• Rede: ${verde}traefik_proxy${reset}"
-    echo -e "• Acesso Traefik: ${amarelo}http://IP_SERVIDOR:8080${reset}"
-    echo -e "• Acesso Portainer: ${amarelo}http://IP_SERVIDOR:9000${reset}"
+    # Coletar informações de domínio para certificados SSL
+    echo -e "${amarelo}Configuração de Domínios para SSL Automático:${reset}"
+    echo ""
+    
+    read -p "Digite o domínio principal do seu servidor (ex: meuservidor.com): " dominio_principal
+    read -p "Digite o subdomínio para o Portainer (ex: portainer): " sub_portainer
+    read -p "Digite seu email para Let's Encrypt (para certificados SSL): " email_ssl
+    
+    echo ""
+    echo -e "${verde}Configuração SSL:${reset}"
+    echo -e "• Domínio principal: ${amarelo}$dominio_principal${reset}"
+    echo -e "• Traefik Dashboard: ${amarelo}http://IP_SERVIDOR:8080${reset} (sem SSL)"
+    echo -e "• Portainer: ${amarelo}https://$sub_portainer.$dominio_principal${reset}"
+    echo -e "• Email Let's Encrypt: ${amarelo}$email_ssl${reset}"
+    echo -e "• Certificados SSL: ${verde}Automático via Let's Encrypt${reset}"
     echo -e "• Modo: ${verde}Docker Swarm Stack${reset}"
-    echo -e "• SSL: ${verde}Automático via Let's Encrypt${reset}"
     echo ""
     
     read -p "Confirma a instalação? (Y/N): " confirm
     case $confirm in
         Y|y)
             echo -e "${verde}Iniciando instalação...${reset}"
-            install_traefik_swarm
-            install_portainer_swarm
+            install_traefik_swarm "$email_ssl"
+            install_portainer_swarm_ssl "$sub_portainer" "$dominio_principal"
             echo -e "${verde}✅ Traefik & Portainer instalados com Docker Swarm!${reset}"
             echo -e "${verde}✅ Traefik Dashboard: http://$(hostname -I | awk '{print $1}'):8080${reset}"
-            echo -e "${verde}✅ Portainer: http://$(hostname -I | awk '{print $1}'):9000${reset}"
-            echo -e "${verde}✅ SSL automático configurado para outras aplicações${reset}"
+            echo -e "${verde}✅ Portainer: https://$sub_portainer.$dominio_principal${reset}"
+            echo -e "${verde}✅ SSL automático configurado${reset}"
             ;;
         *)
             echo "Instalação cancelada."
@@ -351,6 +367,7 @@ n8n.mcp() {
 
 ## Docker Swarm Implementation Functions
 install_traefik_swarm() {
+    local email_ssl="${1:-admin@exemplo.com}"
     echo -e "${verde}⚙️ Configurando Traefik com Docker Swarm e SSL...${reset}"
     
     # Create traefik.yaml stack
@@ -372,7 +389,7 @@ services:
       - --entrypoints.websecure.address=:443
       - --certificatesresolvers.letsencryptresolver.acme.httpchallenge=true
       - --certificatesresolvers.letsencryptresolver.acme.httpchallenge.entrypoint=web
-      - --certificatesresolvers.letsencryptresolver.acme.email=admin@exemplo.com
+      - --certificatesresolvers.letsencryptresolver.acme.email=$email_ssl
       - --certificatesresolvers.letsencryptresolver.acme.storage=/etc/traefik/acme/acme.json
       - --certificatesresolvers.letsencryptresolver.acme.caserver=https://acme-v02.api.letsencrypt.org/directory
       - --log.level=INFO
@@ -481,6 +498,72 @@ EOF
     docker stack deploy --prune --resolve-image always -c portainer.yaml portainer
     if [ $? -eq 0 ]; then
         echo -e "${verde}✅ Portainer configurado com Docker Swarm${reset}"
+    else
+        echo -e "${vermelho}❌ Erro ao configurar Portainer${reset}"
+    fi
+}
+
+install_portainer_swarm_ssl() {
+    local sub_portainer="$1"
+    local dominio_principal="$2"
+    echo -e "${verde}⚙️ Configurando Portainer com Docker Swarm e SSL...${reset}"
+    
+    # Create portainer.yaml stack
+    cat > portainer.yaml << EOF
+version: "3.7"
+services:
+
+## --------------------------- ALICIA --------------------------- ##
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    command: -H unix:///var/run/docker.sock
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+
+    networks:
+      - traefik_proxy
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.portainer.rule=Host(\`$sub_portainer.$dominio_principal\`)
+        - traefik.http.routers.portainer.tls=true
+        - traefik.http.routers.portainer.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.portainer.entrypoints=websecure
+        - traefik.http.services.portainer.loadbalancer.server.port=9000
+        - traefik.http.routers.portainer-redirect.rule=Host(\`$sub_portainer.$dominio_principal\`)
+        - traefik.http.routers.portainer-redirect.entrypoints=web
+        - traefik.http.routers.portainer-redirect.middlewares=redirect-to-https
+        - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+
+## --------------------------- ALICIA --------------------------- ##
+
+volumes:
+  portainer_data:
+    external: true
+    name: portainer_data
+
+networks:
+  traefik_proxy:
+    external: true
+    name: traefik_proxy
+EOF
+
+    # Create Portainer volume
+    docker volume create portainer_data 2>/dev/null || true
+    
+    # Deploy Portainer stack
+    docker stack deploy --prune --resolve-image always -c portainer.yaml portainer
+    if [ $? -eq 0 ]; then
+        echo -e "${verde}✅ Portainer configurado com Docker Swarm e SSL${reset}"
     else
         echo -e "${vermelho}❌ Erro ao configurar Portainer${reset}"
     fi
