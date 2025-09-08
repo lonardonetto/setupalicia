@@ -853,6 +853,7 @@ EOF
     else
         echo -e "${vermelho}❌ Erro ao configurar N8N+MCP${reset}"
     fi
+}
 
 ## Main installer loop
 nome_instalador
@@ -869,6 +870,43 @@ while true; do
 
     case $opcao1 in
         1|01|portainer|traefik|PORTAINER|TRAEFIK)
+            verificar_stack "traefik" && continue
+            verificar_stack "portainer" && continue
+            ferramenta_traefik_e_portainer
+            ;;
+        2|02|evolution|evo|EVO)
+            verificar_stack "evolution${opcao2:+_$opcao2}" && continue
+            if verificar_docker_e_portainer_traefik; then
+                ferramenta_evolution "$opcao2"
+            fi
+            ;;
+        3|03|n8n|N8N)
+            verificar_stack "n8n${opcao2:+_$opcao2}" && continue
+            if verificar_docker_e_portainer_traefik; then
+                ferramenta_n8n "$opcao2"
+            fi
+            ;;
+        4|04|n8n.mcp|N8N.MCP)
+            verificar_stack "n8n-mcp${opcao2:+_$opcao2}" && continue
+            if verificar_docker_e_portainer_traefik; then
+                n8n.mcp "$opcao2"
+            fi
+            ;;
+        portainer.restart) portainer.restart ;;
+        atualizar|update|ATUALIZAR|UPDATE) atualizar_script ;;
+        ctop) ctop ;;
+        htop) htop ;;
+        limpar|clean|LIMPAR|CLEAN) limpar ;;
+        comandos|COMANDOS) menu_comandos; read -p "Pressione Enter para continuar..." ;;
+        sair|fechar|exit|close|x)
+            clear
+            echo "Saindo do instalador..."
+            break
+            ;;
+        *) echo "Opção inválida." ;;
+    esac
+    echo ""
+done
             verificar_stack "traefik" && continue
             verificar_stack "portainer" && continue
             ferramenta_traefik_e_portainer
