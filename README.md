@@ -5,7 +5,7 @@ Instalador simplificado para aplicações essenciais com SSL automático via Tra
 ## ⚡ Instalação Rápida
 
 ```bash
-bash <(curl -sSL https://lonardonetto.github.io/setupalicia/setup.sh)
+bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/setup.sh)
 ```
 
 ## 📦 Aplicações Incluídas
@@ -60,7 +60,7 @@ Se preferir baixar e executar localmente:
 
 ```bash
 # Download
-curl -sSL https://lonardonetto.github.io/setupalicia/setup.sh -o setup.sh
+curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/setup.sh -o setup.sh
 
 # Executar
 chmod +x setup.sh

@@ -34,10 +34,10 @@ else
     echo "❌ Versão não encontrada"
 fi
 
-if grep -q "lonardonetto.github.io" setup.sh; then
-    echo "✅ URL do GitHub encontrada"
+if grep -q "raw.githubusercontent.com" setup.sh; then
+    echo "✅ URL do GitHub raw encontrada"
 else
-    echo "❌ URL do GitHub não encontrada"
+    echo "❌ URL do GitHub raw não encontrada"
 fi
 
 # Verificar funções principais
@@ -71,4 +71,4 @@ echo "4. git commit -m 'Initial commit'"
 echo "5. git push -u origin main"
 echo "6. Configurar GitHub Pages em Settings → Pages"
 echo ""
-echo "🌐 URL final será: https://lonardonetto.github.io/setupalicia/setup.sh"
+echo "🌐 URL final será: https://raw.githubusercontent.com/lonardonetto/setupalicia/main/setup.sh"

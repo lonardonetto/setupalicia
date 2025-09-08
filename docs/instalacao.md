@@ -9,14 +9,14 @@ O SetupAlicia é um instalador automatizado que configura aplicações Docker co
 ### Método 1: Instalação Direta (Recomendado)
 
 ```bash
-bash <(curl -sSL https://lonardonetto.github.io/setupalicia/setup.sh)
+bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/setup.sh)
 ```
 
 ### Método 2: Download e Execução
 
 ```bash
 # Download do script
-curl -sSL https://lonardonetto.github.io/setupalicia/setup.sh -o setup.sh
+curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/setup.sh -o setup.sh
 
 # Dar permissão de execução
 chmod +x setup.sh

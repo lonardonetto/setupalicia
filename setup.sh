@@ -2,7 +2,7 @@
 
 ## SetupAlicia v2.7.1 - Simplified Version
 ## Only essential applications: Traefik, Portainer, Evolution, N8N, N8N+MCP
-## Instalação: bash <(curl -sSL https://lonardonetto.github.io/setupalicia/setup.sh)
+## Instalação: bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/setup.sh)
 
 # Verificar se está sendo executado como root
 if [[ $EUID -eq 0 ]]; then
@@ -36,7 +36,7 @@ reset="\e[0m"
 ## Version info
 versao() {
 echo -e "                     \e[97mSetupAlicia: \e[32mv. 2.7.1 (Simplified)\e[0m"
-echo -e "\e[32msetup.alicia.com.br             \e[97m<----- Instalação Remota ----->     \e[32mbash <(curl -sSL setup.alicia.com.br)\e[0m"
+echo -e "\e[32mraw.githubusercontent.com/lonardonetto/setupalicia/main    \e[97m<----- Instalação Remota ----->     \e[32mbash <(curl -sSL raw.githubusercontent.com/lonardonetto/setupalicia/main/setup.sh)\e[0m"
 echo -e "\e[32malicia.setup.com/whatsapp2      \e[97m<----- Grupos no WhatsApp ----->     \e[32malicia.setup.com/whatsapp3\e[0m"
 }
 
@@ -45,7 +45,7 @@ atualizar_script() {
     echo -e "${verde}Verificando atualizações...${reset}"
     
     # Download da versão mais recente
-    curl -sSL https://lonardonetto.github.io/setupalicia/setup.sh -o /tmp/setupalicia_new.sh
+    curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/setup.sh -o /tmp/setupalicia_new.sh
     
     if [ $? -eq 0 ]; then
         # Verificar se há diferenças
@@ -140,7 +140,7 @@ menu_comandos(){
     echo -e "${branco} • ${amarelo}ssl.status${reset} - Ver todos os certificados"
     echo -e ""
     echo -e "${verde}Instalação Remota:${reset}"
-    echo -e "${branco} • ${amarelo}bash <(curl -sSL lonardonetto.github.io/setupalicia/setup.sh)${reset}"
+    echo -e "${branco} • ${amarelo}bash <(curl -sSL raw.githubusercontent.com/lonardonetto/setupalicia/main/setup.sh)${reset}"
     echo -e ""
     echo -e "${branco}Digite ${amarelo}P1${branco} para voltar ao menu principal${reset}"
     echo -e ""
