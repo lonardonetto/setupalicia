@@ -4,13 +4,6 @@
 ## Only essential applications: Traefik, Portainer, Evolution, N8N, N8N+MCP
 ## Instalação: bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/setup.sh)
 
-# Verificar se está sendo executado como root
-if [[ $EUID -eq 0 ]]; then
-   echo "❌ Este script não deve ser executado como root!"
-   echo "Use: bash <(curl -sSL https://setup.alicia.com.br/setup.sh)"
-   exit 1
-fi
-
 # Verificar conectividade
 if ! curl -sSf https://www.google.com >/dev/null 2>&1; then
     echo "❌ Erro: Sem conexão com a internet"
@@ -21,10 +14,24 @@ fi
 if ! command -v docker &> /dev/null; then
     echo "⚠️  Docker não encontrado. Instalando Docker..."
     curl -fsSL https://get.docker.com | sh
-    sudo usermod -aG docker $USER
-    echo "✅ Docker instalado! Faça logout e login novamente, depois execute o script."
-    exit 0
+    systemctl enable docker
+    systemctl start docker
+    echo "✅ Docker instalado!"
 fi
+
+# Inicializar Docker Swarm se não estiver ativo
+SWARM_STATUS=$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null)
+if [ "$SWARM_STATUS" != "active" ]; then
+    echo "⚠️  Inicializando Docker Swarm..."
+    docker swarm init --advertise-addr $(hostname -I | awk '{print $1}') 2>/dev/null
+    echo "✅ Docker Swarm inicializado!"
+fi
+
+# Criar diretórios necessários
+mkdir -p /root/dados_vps
+
+# Configurar rede do Docker Swarm
+docker network create --driver overlay --attachable traefik_proxy 2>/dev/null || true
 
 ## Colors
 amarelo="\e[33m"
@@ -129,18 +136,22 @@ menu_comandos(){
     echo -e "> ${verde}Comandos Disponíveis:${reset}"
     echo -e "${branco} • ${amarelo}atualizar${reset} - ${branco}Atualiza o SetupAlicia${reset}"
     echo -e "${branco} • ${amarelo}portainer.restart${reset} - ${branco}Reinicia o Portainer${reset}"
-    echo -e "${branco} • ${amarelo}ssl.status${reset} - ${branco}Status dos certificados SSL${reset}"
-    echo -e "${branco} • ${amarelo}ssl.check <dominio>${reset} - ${branco}Verifica SSL de um domínio${reset}"
     echo -e "${branco} • ${amarelo}ctop${reset} - ${branco}Instala o CTOP${reset}"
     echo -e "${branco} • ${amarelo}htop${reset} - ${branco}Instala o HTOP${reset}"
     echo -e "${branco} • ${amarelo}limpar${reset} - ${branco}Limpa Docker${reset}"
     echo -e ""
-    echo -e "${verde}Exemplo de uso SSL:${reset}"
-    echo -e "${branco} • ${amarelo}ssl.check meudominio.com${reset}"
-    echo -e "${branco} • ${amarelo}ssl.status${reset} - Ver todos os certificados"
-    echo -e ""
     echo -e "${verde}Instalação Remota:${reset}"
     echo -e "${branco} • ${amarelo}bash <(curl -sSL raw.githubusercontent.com/lonardonetto/setupalicia/main/setup.sh)${reset}"
+    echo -e ""
+    echo -e "${verde}Acesso aos Serviços:${reset}"
+    echo -e "${branco} • Traefik Dashboard: ${amarelo}http://IP_SERVIDOR:8080${reset}"
+    echo -e "${branco} • Portainer: ${amarelo}http://IP_SERVIDOR:9000${reset}"
+    echo -e "${branco} • Evolution/N8N/MCP: ${amarelo}https://SEU_DOMINIO.com${reset}"
+    echo -e ""
+    echo -e "${verde}Funcionalidades SSL:${reset}"
+    echo -e "${branco} • Traefik: ${verde}Não precisa de domínio (somente IP)${reset}"
+    echo -e "${branco} • Aplicações: ${verde}SSL automático via Let's Encrypt${reset}"
+    echo -e "${branco} • Redirecionamento: ${verde}HTTP -> HTTPS automático${reset}"
     echo -e ""
     echo -e "${branco}Digite ${amarelo}P1${branco} para voltar ao menu principal${reset}"
     echo -e ""
@@ -169,39 +180,30 @@ verificar_stack() {
     fi
 }
 
-## Installation functions with SSL support
+## Installation functions with Docker Swarm support
 ferramenta_traefik_e_portainer() {
     clear
-    echo -e "${verde}=== INSTALAÇÃO TRAEFIK & PORTAINER COM SSL AUTOMÁTICO ===${reset}"
+    echo -e "${verde}=== INSTALAÇÃO TRAEFIK & PORTAINER COM DOCKER SWARM ===${reset}"
     echo ""
     
-    # Collect domain information for SSL certificates
-    echo -e "${amarelo}Configuração de Domínios para SSL Automático:${reset}"
+    echo -e "${amarelo}Configuração Docker Swarm:${reset}"
+    echo -e "• Rede: ${verde}traefik_proxy${reset}"
+    echo -e "• Acesso Traefik: ${amarelo}http://IP_SERVIDOR:8080${reset}"
+    echo -e "• Acesso Portainer: ${amarelo}http://IP_SERVIDOR:9000${reset}"
+    echo -e "• Modo: ${verde}Docker Swarm Stack${reset}"
+    echo -e "• SSL: ${verde}Automático via Let's Encrypt${reset}"
     echo ""
     
-    read -p "Digite o domínio principal do seu servidor (ex: meuservidor.com): " dominio_principal
-    read -p "Digite o subdomínio para o Traefik Dashboard (ex: traefik): " sub_traefik
-    read -p "Digite o subdomínio para o Portainer (ex: portainer): " sub_portainer
-    read -p "Digite seu email para Let's Encrypt (para certificados SSL): " email_ssl
-    
-    echo ""
-    echo -e "${verde}Configuração SSL:${reset}"
-    echo -e "• Domínio principal: ${amarelo}$dominio_principal${reset}"
-    echo -e "• Traefik Dashboard: ${amarelo}$sub_traefik.$dominio_principal${reset}"
-    echo -e "• Portainer: ${amarelo}$sub_portainer.$dominio_principal${reset}"
-    echo -e "• Email Let's Encrypt: ${amarelo}$email_ssl${reset}"
-    echo -e "• Certificados SSL: ${verde}Automático via Let's Encrypt${reset}"
-    echo ""
-    
-    read -p "Confirma a instalação com estas configurações? (Y/N): " confirm
+    read -p "Confirma a instalação? (Y/N): " confirm
     case $confirm in
         Y|y)
             echo -e "${verde}Iniciando instalação...${reset}"
-            install_traefik_with_ssl
-            install_portainer_with_ssl
-            echo -e "${verde}✅ Traefik & Portainer instalados com SSL automático!${reset}"
-            echo -e "${verde}✅ Certificados SSL configurados automaticamente${reset}"
-            echo -e "${verde}✅ Acesso seguro via HTTPS habilitado${reset}"
+            install_traefik_swarm
+            install_portainer_swarm
+            echo -e "${verde}✅ Traefik & Portainer instalados com Docker Swarm!${reset}"
+            echo -e "${verde}✅ Traefik Dashboard: http://$(hostname -I | awk '{print $1}'):8080${reset}"
+            echo -e "${verde}✅ Portainer: http://$(hostname -I | awk '{print $1}'):9000${reset}"
+            echo -e "${verde}✅ SSL automático configurado para outras aplicações${reset}"
             ;;
         *)
             echo "Instalação cancelada."
@@ -220,23 +222,22 @@ ferramenta_evolution() {
         return 1
     fi
     
-    read -p "Digite o subdomínio para Evolution API (ex: evolution): " sub_evolution
-    read -p "Digite o domínio principal (ex: meuservidor.com): " dominio_principal
+    read -p "Digite o domínio para Evolution API (ex: evolution.meudominio.com): " dominio_evolution
     
     echo ""
     echo -e "${verde}Configuração Evolution API:${reset}"
-    echo -e "• URL de Acesso: ${amarelo}https://$sub_evolution.$dominio_principal${reset}"
+    echo -e "• Domínio: ${amarelo}$dominio_evolution${reset}"
     echo -e "• SSL: ${verde}Automático via Traefik + Let's Encrypt${reset}"
-    echo -e "• Certificado: ${verde}Renovado automaticamente${reset}"
+    echo -e "• Modo: ${verde}Docker Swarm Stack${reset}"
     echo ""
     
     read -p "Confirma a instalação? (Y/N): " confirm
     case $confirm in
         Y|y)
-            echo -e "${verde}Instalando Evolution API com SSL...${reset}"
-            install_evolution_with_ssl
-            echo -e "${verde}✅ Evolution API instalada com SSL automático!${reset}"
-            echo -e "${verde}✅ Acesso seguro: https://$sub_evolution.$dominio_principal${reset}"
+            echo -e "${verde}Instalando Evolution API...${reset}"
+            install_evolution_swarm_ssl "$dominio_evolution"
+            echo -e "${verde}✅ Evolution API instalada!${reset}"
+            echo -e "${verde}✅ Acesso: https://$dominio_evolution${reset}"
             ;;
         *)
             echo "Instalação cancelada."
@@ -254,24 +255,23 @@ ferramenta_n8n() {
         return 1
     fi
     
-    read -p "Digite o subdomínio para N8N (ex: n8n): " sub_n8n
-    read -p "Digite o domínio principal (ex: meuservidor.com): " dominio_principal
+    read -p "Digite o domínio para N8N (ex: n8n.meudominio.com): " dominio_n8n
     
     echo ""
     echo -e "${verde}Configuração N8N:${reset}"
-    echo -e "• URL de Acesso: ${amarelo}https://$sub_n8n.$dominio_principal${reset}"
+    echo -e "• Domínio: ${amarelo}$dominio_n8n${reset}"
     echo -e "• SSL: ${verde}Automático via Traefik + Let's Encrypt${reset}"
     echo -e "• Workflows: ${verde}Interface visual para automação${reset}"
-    echo -e "• Certificado: ${verde}Renovado automaticamente${reset}"
+    echo -e "• Modo: ${verde}Docker Swarm Stack${reset}"
     echo ""
     
     read -p "Confirma a instalação? (Y/N): " confirm
     case $confirm in
         Y|y)
-            echo -e "${verde}Instalando N8N com SSL...${reset}"
-            install_n8n_with_ssl
-            echo -e "${verde}✅ N8N instalado com SSL automático!${reset}"
-            echo -e "${verde}✅ Acesso seguro: https://$sub_n8n.$dominio_principal${reset}"
+            echo -e "${verde}Instalando N8N...${reset}"
+            install_n8n_swarm_ssl "$dominio_n8n"
+            echo -e "${verde}✅ N8N instalado!${reset}"
+            echo -e "${verde}✅ Acesso: https://$dominio_n8n${reset}"
             ;;
         *)
             echo "Instalação cancelada."
@@ -289,25 +289,24 @@ n8n.mcp() {
         return 1
     fi
     
-    read -p "Digite o subdomínio para N8N+MCP (ex: n8n-mcp): " sub_n8n_mcp
-    read -p "Digite o domínio principal (ex: meuservidor.com): " dominio_principal
+    read -p "Digite o domínio para N8N+MCP (ex: n8n-mcp.meudominio.com): " dominio_n8n_mcp
     
     echo ""
     echo -e "${verde}Configuração N8N + MCP:${reset}"
-    echo -e "• URL de Acesso: ${amarelo}https://$sub_n8n_mcp.$dominio_principal${reset}"
+    echo -e "• Domínio: ${amarelo}$dominio_n8n_mcp${reset}"
     echo -e "• SSL: ${verde}Automático via Traefik + Let's Encrypt${reset}"
     echo -e "• MCP: ${verde}Model Context Protocol integrado${reset}"
     echo -e "• AI Integration: ${verde}Suporte avançado para IA${reset}"
-    echo -e "• Certificado: ${verde}Renovado automaticamente${reset}"
+    echo -e "• Modo: ${verde}Docker Swarm Stack${reset}"
     echo ""
     
     read -p "Confirma a instalação? (Y/N): " confirm
     case $confirm in
         Y|y)
-            echo -e "${verde}Instalando N8N+MCP com SSL...${reset}"
-            install_n8n_mcp_with_ssl
-            echo -e "${verde}✅ N8N+MCP instalado com SSL automático!${reset}"
-            echo -e "${verde}✅ Acesso seguro: https://$sub_n8n_mcp.$dominio_principal${reset}"
+            echo -e "${verde}Instalando N8N+MCP...${reset}"
+            install_n8n_mcp_swarm_ssl "$dominio_n8n_mcp"
+            echo -e "${verde}✅ N8N+MCP instalado!${reset}"
+            echo -e "${verde}✅ Acesso: https://$dominio_n8n_mcp${reset}"
             ;;
         *)
             echo "Instalação cancelada."
@@ -315,288 +314,328 @@ n8n.mcp() {
     esac
 }
 
-## SSL Implementation Functions
-install_traefik_with_ssl() {
-    echo -e "${verde}⚙️ Configurando Traefik com SSL automático...${reset}"
+## Docker Swarm Implementation Functions
+install_traefik_swarm() {
+    echo -e "${verde}⚙️ Configurando Traefik com Docker Swarm e SSL...${reset}"
     
-    # Create Traefik directory structure
-    mkdir -p /opt/traefik/{data,rules}
-    
-    # Create traefik.yml configuration with automatic SSL
-    cat > /opt/traefik/data/traefik.yml << EOF
-api:
-  dashboard: true
-  insecure: false
-
-entryPoints:
-  web:
-    address: ":80"
-    http:
-      redirections:
-        entrypoint:
-          to: websecure
-          scheme: https
-  websecure:
-    address: ":443"
-
-certificatesResolvers:
-  letsencrypt:
-    acme:
-      tlsChallenge: {}
-      email: $email_ssl
-      storage: /etc/traefik/acme/acme.json
-      caServer: https://acme-v02.api.letsencrypt.org/directory
-
-providers:
-  docker:
-    endpoint: "unix:///var/run/docker.sock"
-    exposedByDefault: false
-    network: "traefik_proxy"
-  file:
-    directory: /etc/traefik/rules
-    watch: true
-
-log:
-  level: INFO
-EOF
-
-    # Create Docker Compose for Traefik with SSL
-    cat > /opt/traefik/docker-compose.yml << EOF
-version: '3.8'
-
+    # Create traefik.yaml stack
+    cat > traefik.yaml << EOF
+version: "3.7"
 services:
+
+## --------------------------- ALICIA --------------------------- ##
+
   traefik:
     image: traefik:v3.0
-    container_name: traefik
-    restart: unless-stopped
+    command:
+      - --api.dashboard=true
+      - --api.insecure=true
+      - --providers.docker=true
+      - --providers.docker.swarmmode=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.letsencryptresolver.acme.httpchallenge=true
+      - --certificatesresolvers.letsencryptresolver.acme.httpchallenge.entrypoint=web
+      - --certificatesresolvers.letsencryptresolver.acme.email=admin@exemplo.com
+      - --certificatesresolvers.letsencryptresolver.acme.storage=/etc/traefik/acme/acme.json
+      - --certificatesresolvers.letsencryptresolver.acme.caserver=https://acme-v02.api.letsencrypt.org/directory
+      - --log.level=INFO
+
     ports:
       - "80:80"
       - "443:443"
+      - "8080:8080"
+
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /opt/traefik/data/traefik.yml:/etc/traefik/traefik.yml:ro
-      - /opt/traefik/data/acme.json:/etc/traefik/acme/acme.json
-      - /opt/traefik/rules:/etc/traefik/rules:ro
+      - traefik_acme:/etc/traefik/acme
+
     networks:
       - traefik_proxy
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.traefik.rule=Host(\`$sub_traefik.$dominio_principal\`)"
-      - "traefik.http.routers.traefik.tls=true"
-      - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.traefik.service=api@internal"
-      - "traefik.http.routers.traefik.middlewares=auth"
-      - "traefik.http.middlewares.auth.basicauth.users=admin:$$2y$$10$$7yPuOLDr1nh.Example.Hash"
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.traefik.rule=Host(\`traefik\`)
+        - traefik.http.routers.traefik.service=api@internal
+        - traefik.http.services.traefik.loadbalancer.server.port=8080
+
+## --------------------------- ALICIA --------------------------- ##
+
+volumes:
+  traefik_acme:
+    external: true
+    name: traefik_acme
 
 networks:
   traefik_proxy:
     external: true
+    name: traefik_proxy
 EOF
 
-    # Create ACME file with correct permissions
-    touch /opt/traefik/data/acme.json
-    chmod 600 /opt/traefik/data/acme.json
+    # Create ACME volume
+    docker volume create traefik_acme 2>/dev/null || true
     
-    # Create Traefik network
-    docker network create traefik_proxy 2>/dev/null || true
-    
-    # Deploy Traefik
-    cd /opt/traefik
-    docker-compose up -d
-    
-    echo -e "${verde}✅ Traefik configurado com SSL automático${reset}"
-    echo -e "${verde}📋 Dashboard: https://$sub_traefik.$dominio_principal${reset}"
+    # Deploy Traefik stack
+    docker stack deploy --prune --resolve-image always -c traefik.yaml traefik
+    if [ $? -eq 0 ]; then
+        echo -e "${verde}✅ Traefik configurado com Docker Swarm e SSL${reset}"
+    else
+        echo -e "${vermelho}❌ Erro ao configurar Traefik${reset}"
+    fi
 }
 
-install_portainer_with_ssl() {
-    echo -e "${verde}⚙️ Configurando Portainer com SSL automático...${reset}"
+install_portainer_swarm() {
+    echo -e "${verde}⚙️ Configurando Portainer com Docker Swarm...${reset}"
     
+    # Create portainer.yaml stack
+    cat > portainer.yaml << EOF
+version: "3.7"
+services:
+
+## --------------------------- ALICIA --------------------------- ##
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    command: -H unix:///var/run/docker.sock
+
+    ports:
+      - "9000:9000"
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+
+    networks:
+      - traefik_proxy
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.portainer.rule=Host(\`portainer\`)
+        - traefik.http.services.portainer.loadbalancer.server.port=9000
+
+## --------------------------- ALICIA --------------------------- ##
+
+volumes:
+  portainer_data:
+    external: true
+    name: portainer_data
+
+networks:
+  traefik_proxy:
+    external: true
+    name: traefik_proxy
+EOF
+
     # Create Portainer volume
-    docker volume create portainer_data
+    docker volume create portainer_data 2>/dev/null || true
     
-    # Deploy Portainer with SSL
-    docker run -d \\
-      --name portainer \\
-      --restart unless-stopped \\
-      -p 9000:9000 \\
-      -v /var/run/docker.sock:/var/run/docker.sock \\
-      -v portainer_data:/data \\
-      --network traefik_proxy \\
-      --label "traefik.enable=true" \\
-      --label "traefik.http.routers.portainer.rule=Host(\`$sub_portainer.$dominio_principal\`)" \\
-      --label "traefik.http.routers.portainer.tls=true" \\
-      --label "traefik.http.routers.portainer.tls.certresolver=letsencrypt" \\
-      --label "traefik.http.services.portainer.loadbalancer.server.port=9000" \\
-      portainer/portainer-ce:latest
-    
-    echo -e "${verde}✅ Portainer configurado com SSL automático${reset}"
-    echo -e "${verde}📋 Acesso: https://$sub_portainer.$dominio_principal${reset}"
+    # Deploy Portainer stack
+    docker stack deploy --prune --resolve-image always -c portainer.yaml portainer
+    if [ $? -eq 0 ]; then
+        echo -e "${verde}✅ Portainer configurado com Docker Swarm${reset}"
+    else
+        echo -e "${vermelho}❌ Erro ao configurar Portainer${reset}"
+    fi
 }
 
-install_evolution_with_ssl() {
-    echo -e "${verde}⚙️ Configurando Evolution API com SSL automático...${reset}"
+install_evolution_swarm() {
+    echo -e "${verde}⚙️ Configurando Evolution API com Docker Swarm...${reset}"
     
-    # Deploy Evolution API with SSL via Traefik
-    docker run -d \\
-      --name evolution-api \\
-      --restart unless-stopped \\
-      --network traefik_proxy \\
-      --label "traefik.enable=true" \\
-      --label "traefik.http.routers.evolution.rule=Host(\`$sub_evolution.$dominio_principal\`)" \\
-      --label "traefik.http.routers.evolution.tls=true" \\
-      --label "traefik.http.routers.evolution.tls.certresolver=letsencrypt" \\
-      --label "traefik.http.services.evolution.loadbalancer.server.port=8080" \\
-      -e AUTHENTICATION_API_KEY="$(openssl rand -base64 32)" \\
-      -e AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true \\
-      -e QRCODE_LIMIT=30 \\
-      -e EVOLUTION_API_URL="https://$sub_evolution.$dominio_principal" \\
-      atendai/evolution-api:v1.7.1
-    
-    echo -e "${verde}✅ Evolution API configurada com SSL automático${reset}"
+    # Create evolution.yaml stack
+    cat > evolution.yaml << EOF
+version: "3.7"
+services:
+
+## --------------------------- ALICIA --------------------------- ##
+
+  evolution:
+    image: atendai/evolution-api:v1.7.1
+
+    ports:
+      - "8081:8080"
+
+    networks:
+      - traefik_proxy
+
+    environment:
+      - AUTHENTICATION_API_KEY=\$(openssl rand -base64 32)
+      - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
+      - QRCODE_LIMIT=30
+      - EVOLUTION_API_URL=http://\$(hostname -I | awk '{print \$1}'):8081
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.evolution.rule=Host(\`evolution\`)
+        - traefik.http.services.evolution.loadbalancer.server.port=8080
+
+## --------------------------- ALICIA --------------------------- ##
+
+networks:
+  traefik_proxy:
+    external: true
+    name: traefik_proxy
+EOF
+
+    # Deploy Evolution stack
+    docker stack deploy --prune --resolve-image always -c evolution.yaml evolution
+    if [ $? -eq 0 ]; then
+        echo -e "${verde}✅ Evolution API configurada com Docker Swarm${reset}"
+    else
+        echo -e "${vermelho}❌ Erro ao configurar Evolution API${reset}"
+    fi
 }
 
-install_n8n_with_ssl() {
-    echo -e "${verde}⚙️ Configurando N8N com SSL automático...${reset}"
+install_n8n_swarm() {
+    echo -e "${verde}⚙️ Configurando N8N com Docker Swarm...${reset}"
     
+    # Create n8n.yaml stack
+    cat > n8n.yaml << EOF
+version: "3.7"
+services:
+
+## --------------------------- ALICIA --------------------------- ##
+
+  n8n:
+    image: n8nio/n8n:latest
+
+    ports:
+      - "5678:5678"
+
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+    networks:
+      - traefik_proxy
+
+    environment:
+      - NODE_ENV=production
+      - N8N_HOST=\$(hostname -I | awk '{print \$1}')
+      - N8N_PROTOCOL=http
+      - N8N_PORT=5678
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.n8n.rule=Host(\`n8n\`)
+        - traefik.http.services.n8n.loadbalancer.server.port=5678
+
+## --------------------------- ALICIA --------------------------- ##
+
+volumes:
+  n8n_data:
+    external: true
+    name: n8n_data
+
+networks:
+  traefik_proxy:
+    external: true
+    name: traefik_proxy
+EOF
+
     # Create N8N volume
-    docker volume create n8n_data
+    docker volume create n8n_data 2>/dev/null || true
     
-    # Deploy N8N with SSL via Traefik
-    docker run -d \\
-      --name n8n \\
-      --restart unless-stopped \\
-      --network traefik_proxy \\
-      -v n8n_data:/home/node/.n8n \\
-      --label "traefik.enable=true" \\
-      --label "traefik.http.routers.n8n.rule=Host(\`$sub_n8n.$dominio_principal\`)" \\
-      --label "traefik.http.routers.n8n.tls=true" \\
-      --label "traefik.http.routers.n8n.tls.certresolver=letsencrypt" \\
-      --label "traefik.http.services.n8n.loadbalancer.server.port=5678" \\
-      -e N8N_HOST="$sub_n8n.$dominio_principal" \\
-      -e N8N_PROTOCOL="https" \\
-      -e NODE_ENV="production" \\
-      -e WEBHOOK_URL="https://$sub_n8n.$dominio_principal/" \\
-      n8nio/n8n:latest
-    
-    echo -e "${verde}✅ N8N configurado com SSL automático${reset}"
+    # Deploy N8N stack
+    docker stack deploy --prune --resolve-image always -c n8n.yaml n8n
+    if [ $? -eq 0 ]; then
+        echo -e "${verde}✅ N8N configurado com Docker Swarm${reset}"
+    else
+        echo -e "${vermelho}❌ Erro ao configurar N8N${reset}"
+    fi
 }
 
-install_n8n_mcp_with_ssl() {
-    echo -e "${verde}⚙️ Configurando N8N+MCP com SSL automático...${reset}"
+install_n8n_mcp_swarm() {
+    echo -e "${verde}⚙️ Configurando N8N+MCP com Docker Swarm...${reset}"
     
+    # Create n8n-mcp.yaml stack
+    cat > n8n-mcp.yaml << EOF
+version: "3.7"
+services:
+
+## --------------------------- ALICIA --------------------------- ##
+
+  n8n-mcp:
+    image: n8nio/n8n:latest
+
+    ports:
+      - "5679:5678"
+
+    volumes:
+      - n8n_mcp_data:/home/node/.n8n
+
+    networks:
+      - traefik_proxy
+
+    environment:
+      - NODE_ENV=production
+      - N8N_HOST=\$(hostname -I | awk '{print \$1}')
+      - N8N_PROTOCOL=http
+      - N8N_PORT=5678
+      - N8N_AI_ENABLED=true
+      - N8N_MCP_ENABLED=true
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.n8n-mcp.rule=Host(\`n8n-mcp\`)
+        - traefik.http.services.n8n-mcp.loadbalancer.server.port=5678
+
+## --------------------------- ALICIA --------------------------- ##
+
+volumes:
+  n8n_mcp_data:
+    external: true
+    name: n8n_mcp_data
+
+networks:
+  traefik_proxy:
+    external: true
+    name: traefik_proxy
+EOF
+
     # Create N8N MCP volume
-    docker volume create n8n_mcp_data
+    docker volume create n8n_mcp_data 2>/dev/null || true
     
-    # Deploy N8N with MCP support and SSL via Traefik
-    docker run -d \\
-      --name n8n-mcp \\
-      --restart unless-stopped \\
-      --network traefik_proxy \\
-      -v n8n_mcp_data:/home/node/.n8n \\
-      --label "traefik.enable=true" \\
-      --label "traefik.http.routers.n8n-mcp.rule=Host(\`$sub_n8n_mcp.$dominio_principal\`)" \\
-      --label "traefik.http.routers.n8n-mcp.tls=true" \\
-      --label "traefik.http.routers.n8n-mcp.tls.certresolver=letsencrypt" \\
-      --label "traefik.http.services.n8n-mcp.loadbalancer.server.port=5678" \\
-      -e N8N_HOST="$sub_n8n_mcp.$dominio_principal" \\
-      -e N8N_PROTOCOL="https" \\
-      -e NODE_ENV="production" \\
-      -e WEBHOOK_URL="https://$sub_n8n_mcp.$dominio_principal/" \\
-      -e N8N_AI_ENABLED="true" \\
-      -e N8N_MCP_ENABLED="true" \\
-      n8nio/n8n:latest
-    
-    echo -e "${verde}✅ N8N+MCP configurado com SSL automático${reset}"
-}
-
-ssl.status() {
-    clear
-    echo -e "${verde}=== STATUS DOS CERTIFICADOS SSL ===${reset}"
-    echo ""
-    
-    if ! docker ps | grep -q "traefik"; then
-        echo -e "${vermelho}❌ Traefik não está rodando${reset}"
-        return 1
-    fi
-    
-    echo -e "${verde}✅ Traefik ativo - SSL automático funcionando${reset}"
-    echo ""
-    
-    # Check SSL certificates
-    if [ -f "/opt/traefik/data/acme.json" ]; then
-        echo -e "${verde}Certificados SSL Let's Encrypt:${reset}"
-        
-        # Count certificates
-        cert_count=$(docker exec traefik cat /etc/traefik/acme/acme.json 2>/dev/null | grep -o '"Certificates"' | wc -l)
-        
-        if [ "$cert_count" -gt 0 ]; then
-            echo -e "• ${verde}Certificados encontrados: $cert_count${reset}"
-            echo -e "• ${verde}Renovação: Automática (Let's Encrypt)${reset}"
-            echo -e "• ${verde}Validade: 90 dias com renovação automática${reset}"
-        else
-            echo -e "• ${amarelo}Nenhum certificado ainda gerado${reset}"
-            echo -e "• ${amarelo}Certificados são gerados no primeiro acesso${reset}"
-        fi
+    # Deploy N8N MCP stack
+    docker stack deploy --prune --resolve-image always -c n8n-mcp.yaml n8n-mcp
+    if [ $? -eq 0 ]; then
+        echo -e "${verde}✅ N8N+MCP configurado com Docker Swarm${reset}"
     else
-        echo -e "${vermelho}❌ Arquivo ACME não encontrado${reset}"
-    fi
-    
-    echo ""
-    echo -e "${verde}Serviços com SSL configurado:${reset}"
-    
-    # Check running services with SSL
-    docker ps --format "table {{.Names}}\\t{{.Labels}}" | grep "traefik.http.routers" | while read line; do
-        service_name=$(echo "$line" | awk '{print $1}')
-        if echo "$line" | grep -q "tls=true"; then
-            echo -e "• ${verde}$service_name - SSL Ativo${reset}"
-        fi
-    done
-    
-    echo ""
-    echo -e "${verde}Como funciona o SSL automático:${reset}"
-    echo -e "• ${branco}Traefik detecta novos serviços automaticamente${reset}"
-    echo -e "• ${branco}Gera certificados SSL via Let's Encrypt${reset}"
-    echo -e "• ${branco}Renova certificados automaticamente${reset}"
-    echo -e "• ${branco}Redireciona HTTP para HTTPS${reset}"
-    echo -e "• ${branco}Certificados válidos por 90 dias${reset}"
-}
-
-ssl.check() {
-    echo -e "${verde}Verificando configuração SSL...${reset}"
-    
-    if [ $# -eq 0 ]; then
-        echo "Uso: ssl.check <dominio>"
-        echo "Exemplo: ssl.check meusite.com"
-        return 1
-    fi
-    
-    domain=$1
-    echo -e "Verificando SSL para: ${amarelo}$domain${reset}"
-    
-    # Check if domain responds with SSL
-    if curl -Is "https://$domain" 2>/dev/null | head -n 1 | grep -q "200 OK"; then
-        echo -e "${verde}✅ DOMÍNIO RESPONDE COM SSL${reset}"
-        
-        # Get SSL certificate info
-        ssl_info=$(echo | openssl s_client -servername "$domain" -connect "$domain:443" 2>/dev/null | openssl x509 -noout -dates 2>/dev/null)
-        
-        if [ $? -eq 0 ]; then
-            echo -e "${verde}Informações do Certificado:${reset}"
-            echo "$ssl_info" | grep "notBefore" | sed 's/notBefore=/• Válido desde: /'
-            echo "$ssl_info" | grep "notAfter" | sed 's/notAfter=/• Expira em: /'
-        fi
-    else
-        echo -e "${vermelho}❌ DOMÍNIO NÃO RESPONDE OU SSL INATIVO${reset}"
-        echo -e "${amarelo}Verifique:${reset}"
-        echo -e "• DNS apontando para o servidor"
-        echo -e "• Portas 80 e 443 abertas"
-        echo -e "• Traefik rodando corretamente"
     fi
 }
 
 portainer.restart() {
     echo "Reiniciando Portainer..."
-    docker restart portainer 2>/dev/null || echo "Portainer não encontrado"
+    docker service update --force portainer_portainer 2>/dev/null || echo "Portainer stack não encontrado"
 }
 
 ctop() {
@@ -608,15 +647,211 @@ ctop() {
 
 htop() {
     echo "Instalando HTOP..."
-    sudo apt update && sudo apt install htop -y
+    apt update && apt install htop -y
     echo "HTOP instalado!"
 }
 
 limpar() {
     echo "Limpando sistema Docker..."
     docker system prune -af
-    echo "Limpeza concluída!"
 }
+
+install_evolution_swarm_ssl() {
+    local dominio="$1"
+    echo -e "${verde}⚙️ Configurando Evolution API com Docker Swarm e SSL...${reset}"
+    
+    # Create evolution.yaml stack
+    cat > evolution.yaml << EOF
+version: "3.7"
+services:
+
+## --------------------------- ALICIA --------------------------- ##
+
+  evolution:
+    image: atendai/evolution-api:v1.7.1
+
+    networks:
+      - traefik_proxy
+
+    environment:
+      - AUTHENTICATION_API_KEY=\$(openssl rand -base64 32)
+      - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
+      - QRCODE_LIMIT=30
+      - EVOLUTION_API_URL=https://$dominio
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.evolution.rule=Host(\`$dominio\`)
+        - traefik.http.routers.evolution.tls=true
+        - traefik.http.routers.evolution.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.evolution.entrypoints=websecure
+        - traefik.http.services.evolution.loadbalancer.server.port=8080
+        - traefik.http.routers.evolution-redirect.rule=Host(\`$dominio\`)
+        - traefik.http.routers.evolution-redirect.entrypoints=web
+        - traefik.http.routers.evolution-redirect.middlewares=redirect-to-https
+        - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+
+## --------------------------- ALICIA --------------------------- ##
+
+networks:
+  traefik_proxy:
+    external: true
+    name: traefik_proxy
+EOF
+
+    # Deploy Evolution stack
+    docker stack deploy --prune --resolve-image always -c evolution.yaml evolution
+    if [ $? -eq 0 ]; then
+        echo -e "${verde}✅ Evolution API configurada com Docker Swarm e SSL${reset}"
+    else
+        echo -e "${vermelho}❌ Erro ao configurar Evolution API${reset}"
+    fi
+}
+
+install_n8n_swarm_ssl() {
+    local dominio="$1"
+    echo -e "${verde}⚙️ Configurando N8N com Docker Swarm e SSL...${reset}"
+    
+    # Create n8n.yaml stack
+    cat > n8n.yaml << EOF
+version: "3.7"
+services:
+
+## --------------------------- ALICIA --------------------------- ##
+
+  n8n:
+    image: n8nio/n8n:latest
+
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+    networks:
+      - traefik_proxy
+
+    environment:
+      - NODE_ENV=production
+      - N8N_HOST=$dominio
+      - N8N_PROTOCOL=https
+      - N8N_PORT=443
+      - WEBHOOK_URL=https://$dominio/
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.n8n.rule=Host(\`$dominio\`)
+        - traefik.http.routers.n8n.tls=true
+        - traefik.http.routers.n8n.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.n8n.entrypoints=websecure
+        - traefik.http.services.n8n.loadbalancer.server.port=5678
+        - traefik.http.routers.n8n-redirect.rule=Host(\`$dominio\`)
+        - traefik.http.routers.n8n-redirect.entrypoints=web
+        - traefik.http.routers.n8n-redirect.middlewares=redirect-to-https
+
+## --------------------------- ALICIA --------------------------- ##
+
+volumes:
+  n8n_data:
+    external: true
+    name: n8n_data
+
+networks:
+  traefik_proxy:
+    external: true
+    name: traefik_proxy
+EOF
+
+    # Create N8N volume
+    docker volume create n8n_data 2>/dev/null || true
+    
+    # Deploy N8N stack
+    docker stack deploy --prune --resolve-image always -c n8n.yaml n8n
+    if [ $? -eq 0 ]; then
+        echo -e "${verde}✅ N8N configurado com Docker Swarm e SSL${reset}"
+    else
+        echo -e "${vermelho}❌ Erro ao configurar N8N${reset}"
+    fi
+}
+
+install_n8n_mcp_swarm_ssl() {
+    local dominio="$1"
+    echo -e "${verde}⚙️ Configurando N8N+MCP com Docker Swarm e SSL...${reset}"
+    
+    # Create n8n-mcp.yaml stack
+    cat > n8n-mcp.yaml << EOF
+version: "3.7"
+services:
+
+## --------------------------- ALICIA --------------------------- ##
+
+  n8n-mcp:
+    image: n8nio/n8n:latest
+
+    volumes:
+      - n8n_mcp_data:/home/node/.n8n
+
+    networks:
+      - traefik_proxy
+
+    environment:
+      - NODE_ENV=production
+      - N8N_HOST=$dominio
+      - N8N_PROTOCOL=https
+      - N8N_PORT=443
+      - WEBHOOK_URL=https://$dominio/
+      - N8N_AI_ENABLED=true
+      - N8N_MCP_ENABLED=true
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.n8n-mcp.rule=Host(\`$dominio\`)
+        - traefik.http.routers.n8n-mcp.tls=true
+        - traefik.http.routers.n8n-mcp.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.n8n-mcp.entrypoints=websecure
+        - traefik.http.services.n8n-mcp.loadbalancer.server.port=5678
+        - traefik.http.routers.n8n-mcp-redirect.rule=Host(\`$dominio\`)
+        - traefik.http.routers.n8n-mcp-redirect.entrypoints=web
+        - traefik.http.routers.n8n-mcp-redirect.middlewares=redirect-to-https
+
+## --------------------------- ALICIA --------------------------- ##
+
+volumes:
+  n8n_mcp_data:
+    external: true
+    name: n8n_mcp_data
+
+networks:
+  traefik_proxy:
+    external: true
+    name: traefik_proxy
+EOF
+
+    # Create N8N MCP volume
+    docker volume create n8n_mcp_data 2>/dev/null || true
+    
+    # Deploy N8N MCP stack
+    docker stack deploy --prune --resolve-image always -c n8n-mcp.yaml n8n-mcp
+    if [ $? -eq 0 ]; then
+        echo -e "${verde}✅ N8N+MCP configurado com Docker Swarm e SSL${reset}"
+    else
+        echo -e "${vermelho}❌ Erro ao configurar N8N+MCP${reset}"
+    fi
 
 ## Main installer loop
 nome_instalador
@@ -650,19 +885,13 @@ while true; do
             fi
             ;;
         4|04|n8n.mcp|N8N.MCP)
-            verificar_stack "n8n${opcao2:+_$opcao2}_mcp" && continue
+            verificar_stack "n8n-mcp${opcao2:+_$opcao2}" && continue
             if verificar_docker_e_portainer_traefik; then
                 n8n.mcp "$opcao2"
             fi
             ;;
         portainer.restart) portainer.restart ;;
         atualizar|update|ATUALIZAR|UPDATE) atualizar_script ;;
-        ssl.status) ssl.status; read -p "Pressione Enter para continuar..." ;;
-        ssl.check) 
-            read -p "Digite o domínio para verificar SSL: " ssl_domain
-            ssl.check "$ssl_domain"
-            read -p "Pressione Enter para continuar..."
-            ;;
         ctop) ctop ;;
         htop) htop ;;
         limpar|clean|LIMPAR|CLEAN) limpar ;;
