@@ -630,6 +630,7 @@ EOF
     if [ $? -eq 0 ]; then
         echo -e "${verde}✅ N8N+MCP configurado com Docker Swarm${reset}"
     else
+        echo -e "${vermelho}❌ Erro ao configurar N8N+MCP${reset}"
     fi
 }
 
