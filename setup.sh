@@ -202,6 +202,110 @@ validar_senha() {
     return 0
 }
 
+## Verificações de recursos como no original
+recursos() {
+    echo -e "\e[97m• VERIFICANDO RECURSOS DO SERVIDOR \e[33m[1/3]\e[0m"
+    echo ""
+    
+    ## Verificar RAM mínima (2GB)
+    ram_mb=$(free -m | awk 'NR==2{printf "%.0f", $2}')
+    if [ $ram_mb -lt 1800 ]; then
+        echo -e "${vermelho}ERRO: RAM insuficiente. Mínimo: 2GB, Atual: ${ram_mb}MB${reset}"
+        exit 1
+    fi
+    echo "1/3 - [ OK ] - RAM: ${ram_mb}MB"
+    
+    ## Verificar espaço em disco (10GB)
+    disk_gb=$(df / | awk 'NR==2 {printf "%.0f", $4/1024/1024}')
+    if [ $disk_gb -lt 8 ]; then
+        echo -e "${vermelho}ERRO: Espaço em disco insuficiente. Mínimo: 10GB${reset}"
+        exit 1
+    fi
+    echo "2/3 - [ OK ] - Disco: ${disk_gb}GB livres"
+    
+    ## Verificar conexão com internet
+    if ! ping -c 1 8.8.8.8 &> /dev/null; then
+        echo -e "${vermelho}ERRO: Sem conexão com internet${reset}"
+        exit 1
+    fi
+    echo "3/3 - [ OK ] - Conexão com internet"
+    echo ""
+}
+
+## Configuração inicial do sistema
+configurar_sistema() {
+    echo -e "\e[97m• CONFIGURANDO SISTEMA INICIAL \e[33m[2/3]\e[0m"
+    echo ""
+    
+    ## Atualizar sistema
+    apt-get update > /dev/null 2>&1
+    if [ $? -eq 0 ]; then
+        echo "1/5 - [ OK ] - Update inicial"
+    else
+        echo "1/5 - [ OFF ] - Update inicial"
+    fi
+    
+    ## Configurar timezone
+    timedatectl set-timezone America/Sao_Paulo > /dev/null 2>&1
+    if [ $? -eq 0 ]; then
+        echo "2/5 - [ OK ] - Timezone configurado"
+    else
+        echo "2/5 - [ OFF ] - Timezone"
+    fi
+    
+    ## Instalar dependências básicas
+    apt-get install -y curl wget git jq > /dev/null 2>&1
+    if [ $? -eq 0 ]; then
+        echo "3/5 - [ OK ] - Dependências básicas"
+    else
+        echo "3/5 - [ OFF ] - Dependências básicas"
+    fi
+    
+    ## Verificar se é root
+    if [ "$EUID" -ne 0 ]; then
+        echo "4/5 - [ OFF ] - Executar como root"
+        echo -e "${vermelho}Por favor, execute como root: sudo $0${reset}"
+        exit 1
+    else
+        echo "4/5 - [ OK ] - Executando como root"
+    fi
+    
+    ## Verificar arquitetura
+    arch=$(uname -m)
+    if [[ "$arch" != "x86_64" && "$arch" != "amd64" ]]; then
+        echo "5/5 - [ OFF ] - Arquitetura não suportada: $arch"
+        exit 1
+    else
+        echo "5/5 - [ OK ] - Arquitetura: $arch"
+    fi
+    echo ""
+}
+
+## Preparação final
+preparar_ambiente() {
+    echo -e "\e[97m• PREPARANDO AMBIENTE \e[33m[3/3]\e[0m"
+    echo ""
+    
+    ## Criar diretório de dados se não existir
+    if [ ! -d "$HOME/dados_vps" ]; then
+        mkdir -p "$HOME/dados_vps"
+        echo "1/2 - [ OK ] - Diretório de dados criado"
+    else
+        echo "1/2 - [ OK ] - Diretório de dados existe"
+    fi
+    
+    ## Verificar se já existe instalação prévia
+    if [ -f "$HOME/dados_vps/dados_vps" ]; then
+        echo "2/2 - [ OK ] - Dados VPS encontrados"
+    else
+        echo "2/2 - [ OK ] - Nova instalação"
+    fi
+    echo ""
+    
+    sleep 2
+    clear
+}
+
 ## Função principal - Traefik & Portainer
 ferramenta_traefik_e_portainer() {
 clear
@@ -334,9 +438,22 @@ limpar() {
 }
 
 ## EXECUÇÃO PRINCIPAL - Exatamente como SetupOrion
+## Primeiro executa nome_instalador e direitos_instalador
 nome_instalador
 direitos_instalador
 
+## Depois executa todas as verificações e configurações iniciais
+echo -e "\e[97m========================================== SETUP INICIAL ==========================================\e[0m"
+echo ""
+recursos
+configurar_sistema
+preparar_ambiente
+
+echo -e "\e[32m✅ SISTEMA CONFIGURADO COM SUCESSO!\e[0m"
+echo -e "\e[33mIniciando menu de ferramentas...\e[0m"
+sleep 3
+
+## Só então inicia o loop do menu
 while true; do
     nome_menu
     menu_instalador
