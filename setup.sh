@@ -4,35 +4,6 @@
 ## Only essential applications: Traefik, Portainer, Evolution, N8N, N8N+MCP
 ## Instalação: bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/setup.sh)
 
-# Verificar conectividade
-if ! curl -sSf https://www.google.com >/dev/null 2>&1; then
-    echo "❌ Erro: Sem conexão com a internet"
-    exit 1
-fi
-
-# Verificar se Docker está instalado
-if ! command -v docker &> /dev/null; then
-    echo "⚠️  Docker não encontrado. Instalando Docker..."
-    curl -fsSL https://get.docker.com | sh
-    systemctl enable docker
-    systemctl start docker
-    echo "✅ Docker instalado!"
-fi
-
-# Inicializar Docker Swarm se não estiver ativo
-SWARM_STATUS=$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null)
-if [ "$SWARM_STATUS" != "active" ]; then
-    echo "⚠️  Inicializando Docker Swarm..."
-    docker swarm init --advertise-addr $(hostname -I | awk '{print $1}') 2>/dev/null
-    echo "✅ Docker Swarm inicializado!"
-fi
-
-# Criar diretórios necessários
-mkdir -p /root/dados_vps
-
-# Configurar rede do Docker Swarm
-docker network create --driver overlay --attachable traefik_proxy 2>/dev/null || true
-
 ## Colors
 amarelo="\e[33m"
 verde="\e[32m"
@@ -153,6 +124,7 @@ menu_comandos(){
     echo -e "${branco} • Aplicações: ${verde}SSL automático via Let's Encrypt${reset}"
     echo -e "${branco} • Redirecionamento: ${verde}HTTP -> HTTPS automático${reset}"
     echo -e ""
+    echo -e "${amarelo}⚠️  IMPORTANTE: Instale primeiro o Traefik & Portainer (opção 1)${reset}"
     echo -e "${branco}Digite ${amarelo}P1${branco} para voltar ao menu principal${reset}"
     echo -e ""
 }
@@ -160,10 +132,66 @@ menu_comandos(){
 ## Docker verification
 verificar_docker_e_portainer_traefik() {
     if ! command -v docker &> /dev/null; then
-        echo "Docker não encontrado. Instale primeiro o Traefik & Portainer."
+        echo -e "${vermelho}Docker não encontrado!${reset}"
+        echo -e "${amarelo}Por favor, instale primeiro o Traefik & Portainer (opção 1).${reset}"
         sleep 3
         return 1
     fi
+    
+    # Verificar se o Swarm está ativo
+    SWARM_STATUS=$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null)
+    if [ "$SWARM_STATUS" != "active" ]; then
+        echo -e "${vermelho}Docker Swarm não está ativo!${reset}"
+        echo -e "${amarelo}Por favor, instale primeiro o Traefik & Portainer (opção 1).${reset}"
+        sleep 3
+        return 1
+    fi
+    
+    return 0
+}
+
+## Verificação e instalação inicial completa
+verificar_e_instalar_requisitos() {
+    echo -e "${verde}🔍 Verificando pré-requisitos...${reset}"
+    
+    # Verificar conectividade
+    if ! curl -sSf https://www.google.com >/dev/null 2>&1; then
+        echo -e "${vermelho}❌ Erro: Sem conexão com a internet${reset}"
+        return 1
+    fi
+    echo -e "${verde}✅ Conectividade: OK${reset}"
+    
+    # Verificar se Docker está instalado
+    if ! command -v docker &> /dev/null; then
+        echo -e "${amarelo}⚠️  Docker não encontrado. Instalando Docker...${reset}"
+        curl -fsSL https://get.docker.com | sh
+        systemctl enable docker
+        systemctl start docker
+        echo -e "${verde}✅ Docker instalado!${reset}"
+    else
+        echo -e "${verde}✅ Docker: Já instalado${reset}"
+    fi
+    
+    # Inicializar Docker Swarm se não estiver ativo
+    SWARM_STATUS=$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null)
+    if [ "$SWARM_STATUS" != "active" ]; then
+        echo -e "${amarelo}⚠️  Inicializando Docker Swarm...${reset}"
+        docker swarm init --advertise-addr $(hostname -I | awk '{print $1}') 2>/dev/null
+        echo -e "${verde}✅ Docker Swarm inicializado!${reset}"
+    else
+        echo -e "${verde}✅ Docker Swarm: Já ativo${reset}"
+    fi
+    
+    # Criar diretórios necessários
+    mkdir -p /root/dados_vps
+    echo -e "${verde}✅ Diretórios: Criados${reset}"
+    
+    # Configurar rede do Docker Swarm
+    docker network create --driver overlay --attachable traefik_proxy 2>/dev/null || true
+    echo -e "${verde}✅ Rede Swarm: Configurada${reset}"
+    
+    echo -e "${verde}🎉 Todos os pré-requisitos estão prontos!${reset}"
+    echo ""
     return 0
 }
 
@@ -185,6 +213,13 @@ ferramenta_traefik_e_portainer() {
     clear
     echo -e "${verde}=== INSTALAÇÃO TRAEFIK & PORTAINER COM DOCKER SWARM ===${reset}"
     echo ""
+    
+    # Verificar e instalar todos os pré-requisitos
+    if ! verificar_e_instalar_requisitos; then
+        echo -e "${vermelho}Erro na verificação dos pré-requisitos!${reset}"
+        read -p "Pressione Enter para continuar..."
+        return 1
+    fi
     
     echo -e "${amarelo}Configuração Docker Swarm:${reset}"
     echo -e "• Rede: ${verde}traefik_proxy${reset}"
