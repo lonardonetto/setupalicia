@@ -4,17 +4,37 @@ Instalador simplificado para aplicações essenciais com SSL automático via Tra
 
 ## ⚡ Instalação Rápida
 
+### SetupAlicia Completo
 ```bash
 bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/setup.sh)
 ```
 
+### N8N + Evolution API (Instalação Direta)
+```bash
+bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/install_n8n_evolution.sh) 
+"email@gmail.com" 
+"n8n.seudominio.com" 
+"portainer.seudominio.com" 
+"webhook.seudominio.com" 
+"evolution.seudominio.com"
+```
+
 ## 📦 Aplicações Incluídas
 
+### SetupAlicia Principal
 - **🔒 Traefik** - Proxy reverso com SSL automático
 - **🐳 Portainer** - Interface de gerenciamento Docker  
 - **📱 Evolution API** - API para WhatsApp
 - **🔄 N8N** - Automação de workflows
 - **🤖 N8N + MCP** - N8N com Model Context Protocol
+
+### N8N + Evolution (install_n8n_evolution.sh)
+- **🔒 Traefik** - Proxy reverso com SSL automático
+- **🐳 Portainer** - Interface de gerenciamento Docker
+- **📦 PostgreSQL** - Banco de dados
+- **♾️ Redis** - Cache e filas
+- **📱 Evolution API** - API para WhatsApp com autenticação
+- **🔄 N8N** - Automação de workflows
 
 ## ✨ Recursos
 
