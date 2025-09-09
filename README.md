@@ -9,7 +9,7 @@ Instalador simplificado para aplicações essenciais com SSL automático via Tra
 bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/setup.sh)
 ```
 
-### N8N + Evolution API (Instalação Direta)
+### N8N + Evolution API (Instalação Direta) - v0.2
 ```bash
 bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/install_n8n_evolution.sh) \
 "email@gmail.com" \
@@ -18,6 +18,8 @@ bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main
 "webhook.seudominio.com" \
 "evolution.seudominio.com"
 ```
+
+> ✨ **Novidades v0.2**: Correções de autenticação PostgreSQL, verificação de saúde dos serviços, configuração otimizada da Evolution API e melhor sincronização entre serviços.
 
 ## 📦 Aplicações Incluídas
 
@@ -28,13 +30,14 @@ bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main
 - **🔄 N8N** - Automação de workflows
 - **🤖 N8N + MCP** - N8N com Model Context Protocol
 
-### N8N + Evolution (install_n8n_evolution.sh)
+### N8N + Evolution (install_n8n_evolution.sh) - v0.2
 - **🔒 Traefik** - Proxy reverso com SSL automático
 - **🐳 Portainer** - Interface de gerenciamento Docker
-- **📦 PostgreSQL** - Banco de dados
+- **📦 PostgreSQL** - Banco de dados com autenticação corrigida
 - **♾️ Redis** - Cache e filas
-- **📱 Evolution API** - API para WhatsApp com autenticação
+- **📱 Evolution API v2.2.3** - API para WhatsApp com configuração otimizada
 - **🔄 N8N** - Automação de workflows
+- **🔍 Verificação de Saúde** - Monitoramento automático dos serviços
 
 ## ✨ Recursos
 
@@ -87,7 +90,50 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-## 🔐 Segurança SSL
+## 📅 Changelog
+
+### v0.2 - install_n8n_evolution.sh (2025-09-09)
+**🔄 Grandes Melhorias:**
+- ✅ **Correção crítica**: Resolvidos erros de autenticação PostgreSQL
+- 🕰️ **Melhor sincronização**: Timing otimizado entre serviços
+- 🐞 **Evolution API v2.2.3**: Versão estável com configuração aprimorada
+- 🔍 **Health Checks**: Verificação automática de saúde dos serviços
+- 🔄 **Restart Policy**: Política de reinicialização automática
+- 📊 **Melhor UX**: Mensagens detalhadas e guia de troubleshooting
+- 🔐 **Segurança**: Geração segura de senhas e API keys
+
+**🔧 Correções Técnicas:**
+- Aguarda PostgreSQL estar 100% operacional antes de criar bancos
+- Verificação ativa de Redis antes da Evolution API
+- Fallback para arquivo local se download de config falhar
+- Política de restart para recuperação automática
+- Configuração de dados persistentes habilitada
+
+## 🔍 Troubleshooting
+
+### Problemas Comuns
+**Evolution API não conecta ao PostgreSQL:**
+```bash
+# Verificar logs
+docker service logs evolution_evolution-api
+
+# Verificar PostgreSQL
+docker exec $(docker ps --filter "name=postgres_postgres" --format "{{.Names}}") pg_isready -U postgres
+```
+
+**Serviços não iniciando:**
+```bash
+# Status dos stacks
+docker stack ps postgres
+docker stack ps redis
+docker stack ps evolution
+docker stack ps n8n
+
+# Forçar restart
+docker service update --force evolution_evolution-api
+```
+
+## 🕲️ Segurança SSL
 
 - 🔒 Certificados Let's Encrypt gratuitos
 - 🔄 Renovação automática a cada 90 dias

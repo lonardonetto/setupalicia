@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Instalador do N8N em fila no Docker Swarm
+# Instalador do N8N + Evolution API em Docker Swarm
 # Autor: Maicon Ramos - Automação sem Limites
-# Versao: 0.1
+# Versao: 0.2
 
 SSL_EMAIL=$1
 DOMINIO_N8N=$2
@@ -24,6 +24,17 @@ echo "DOMINIO_EVOLUTION=$DOMINIO_EVOLUTION" >> .env
 echo "N8N_KEY=$N8N_KEY" >> .env
 echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> .env
 echo "EVOLUTION_API_KEY=$EVOLUTION_API_KEY" >> .env
+
+echo "🔑 Variáveis de ambiente configuradas:"
+echo "   • SSL Email: $SSL_EMAIL"
+echo "   • Domínio N8N: $DOMINIO_N8N"
+echo "   • Domínio Evolution: $DOMINIO_EVOLUTION"
+echo "   • Domínio Portainer: $DOMINIO_PORTAINER"
+echo "   • Webhook N8N: $WEBHOOK_N8N"
+echo "   • PostgreSQL Password: [CONFIGURADA]"
+echo "   • Evolution API Key: [CONFIGURADA]"
+echo "   • N8N Key: [CONFIGURADA]"
+echo ""
 
 #evitar interação
 export DEBIAN_FRONTEND=noninteractive
@@ -115,35 +126,51 @@ curl -sSL "https://instalador.automacaosemlimites.com.br/arquivos/instalador/sta
 docker stack deploy --prune --resolve-image always -c redis.yaml redis >> instalacao_n8n.log 2>&1 && echo "Redis instalado com sucesso!"
 
 #Stack do Evolution API
-echo "Configurando a Evolution API com domínio $DOMINIO_EVOLUTION"
-echo "Aguardando PostgreSQL ficar disponível..."
-sleep 60
+echo "Aguardando PostgreSQL e Redis ficarem disponíveis..."
+sleep 90
 
-# Verificar se PostgreSQL está funcionando
-echo "Testando conexão com PostgreSQL..."
-for i in {1..30}; do
+# Verificar se PostgreSQL está funcionando e criar banco de dados
+echo "Testando conexão com PostgreSQL e criando banco de dados..."
+for i in {1..60}; do
     postgres_container_name=$(docker ps --filter "name=postgres_postgres" --format "{{.Names}}")
     if [ ! -z "$postgres_container_name" ]; then
         if docker exec $postgres_container_name pg_isready -U postgres > /dev/null 2>&1; then
             echo "PostgreSQL está funcionando!"
+            # Criar banco de dados da Evolution API
+            docker exec $postgres_container_name psql -U postgres -d postgres -c "CREATE DATABASE evolution;" < /dev/null >> instalacao_n8n.log 2>&1 && echo "Banco Evolution criado com sucesso!"
             break
         fi
     fi
-    echo "Aguardando PostgreSQL... ($i/30)"
+    echo "Aguardando PostgreSQL... ($i/60)"
+    sleep 3
+done
+
+# Verificar se Redis está funcionando
+echo "Testando conexão com Redis..."
+for i in {1..30}; do
+    redis_container_name=$(docker ps --filter "name=redis_redis" --format "{{.Names}}")
+    if [ ! -z "$redis_container_name" ]; then
+        if docker exec $redis_container_name redis-cli ping > /dev/null 2>&1; then
+            echo "Redis está funcionando!"
+            break
+        fi
+    fi
+    echo "Aguardando Redis... ($i/30)"
     sleep 2
 done
 
-postgres_container_name=$(docker ps --filter "name=postgres_postgres" --format "{{.Names}}")
-#criar banco
-docker exec $postgres_container_name psql -U postgres -d postgres -c "CREATE DATABASE evolution;" < /dev/null >> instalacao_n8n.log 2>&1 && echo "Banco Evolution criado com sucesso!"
+echo "Configurando a Evolution API com domínio $DOMINIO_EVOLUTION"
+curl -sSL "https://instalador.automacaosemlimites.com.br/arquivos/instalador/stack/evolution.yaml" -o "evolution.yaml"
 
-# Criar Evolution API stack usando modelo padrão
-cat > evolution.yaml <<EOL
+# Se não conseguir baixar o arquivo, criar um local
+if [ ! -f "evolution.yaml" ]; then
+    echo "Criando arquivo evolution.yaml local..."
+    cat > evolution.yaml <<EOL
 version: '3.7'
 
 services:
   evolution-api:
-    image: atendai/evolution-api:latest
+    image: atendai/evolution-api:v2.2.3
     networks:
       - network_public
     environment:
@@ -160,18 +187,18 @@ services:
       - DATABASE_PROVIDER=postgresql
       - DATABASE_CONNECTION_URI=postgresql://postgres:${POSTGRES_PASSWORD}@postgres_postgres:5432/evolution?schema=public&sslmode=disable
       - DATABASE_CONNECTION_CLIENT_NAME=evolution_db
-      - DATABASE_SAVE_DATA_INSTANCE=false
-      - DATABASE_SAVE_DATA_NEW_MESSAGE=false
-      - DATABASE_SAVE_MESSAGE_UPDATE=false
-      - DATABASE_SAVE_DATA_CONTACTS=false
-      - DATABASE_SAVE_DATA_CHATS=false
+      - DATABASE_SAVE_DATA_INSTANCE=true
+      - DATABASE_SAVE_DATA_NEW_MESSAGE=true
+      - DATABASE_SAVE_MESSAGE_UPDATE=true
+      - DATABASE_SAVE_DATA_CONTACTS=true
+      - DATABASE_SAVE_DATA_CHATS=true
       - REDIS_ENABLED=true
       - REDIS_URI=redis://redis_redis:6379
       - REDIS_PREFIX_KEY=evolution
       - CACHE_REDIS_ENABLED=true
       - CACHE_REDIS_URI=redis://redis_redis:6379
       - CACHE_REDIS_PREFIX_KEY=evolution
-      - CACHE_REDIS_SAVE_INSTANCES=false
+      - CACHE_REDIS_SAVE_INSTANCES=true
       - CACHE_LOCAL_ENABLED=false
       - QRCODE_LIMIT=30
       - QRCODE_COLOR=#198754
@@ -187,6 +214,8 @@ services:
       - QRCODE_EXPIRATION_TIME=60
       - TYPEBOT_ENABLED=false
       - CHATWOOT_ENABLED=false
+      - WEBSOCKET_ENABLED=false
+      - WEBSOCKET_GLOBAL_EVENTS=false
     volumes:
       - evolution_instances:/evolution/instances
       - evolution_store:/evolution/store
@@ -196,13 +225,22 @@ services:
       placement:
         constraints:
           - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
       labels:
         - traefik.enable=true
         - traefik.http.routers.evolution.rule=Host(\`${DOMINIO_EVOLUTION}\`)
         - traefik.http.routers.evolution.tls=true
         - traefik.http.routers.evolution.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.evolution.entrypoints=websecure
         - traefik.http.services.evolution.loadbalancer.server.port=8080
         - traefik.http.routers.evolution.service=evolution
+        - traefik.http.routers.evolution-redirect.rule=Host(\`${DOMINIO_EVOLUTION}\`)
+        - traefik.http.routers.evolution-redirect.entrypoints=web
+        - traefik.http.routers.evolution-redirect.middlewares=redirect-to-https
         - traefik.docker.network=network_public
 
 volumes:
@@ -215,29 +253,102 @@ networks:
   network_public:
     external: true
 EOL
+fi
 
-# Criar volumes
+# Criar volumes se não existirem
 docker volume create evolution_instances >> instalacao_n8n.log 2>&1
 docker volume create evolution_store >> instalacao_n8n.log 2>&1
+
+# Aguardar mais um pouco antes de fazer deploy da Evolution API
+echo "Aguardando serviços estabilizarem antes de instalar Evolution API..."
+sleep 30
 
 # Executar stack da Evolution API
 env DOMINIO_EVOLUTION="$DOMINIO_EVOLUTION" POSTGRES_PASSWORD="$POSTGRES_PASSWORD" EVOLUTION_API_KEY="$EVOLUTION_API_KEY" docker stack deploy --prune --resolve-image always -c evolution.yaml evolution >> instalacao_n8n.log 2>&1 && echo "Evolution API instalada com sucesso!"
 
 #Stack do n8n
-#Nome do banco
-echo "Criando o Banco de Dados do n8n"
-sleep 40
-postgres_container_name=$(docker ps --filter "name=postgres_postgres" --format "{{.Names}}")
-#criar banco
-docker exec $postgres_container_name psql -U postgres -d postgres -c "CREATE DATABASE n8n;" < /dev/null >> instalacao_n8n.log 2>&1 && echo "Banco n8n criado com sucesso!"
 echo "Configurando o n8n com domínio $DOMINIO_N8N e webhook $WEBHOOK_N8N"
+echo "Aguardando PostgreSQL para criar banco do N8N..."
+sleep 20
+
+# Verificar novamente se PostgreSQL está funcionando e criar banco do N8N
+for i in {1..30}; do
+    postgres_container_name=$(docker ps --filter "name=postgres_postgres" --format "{{.Names}}")
+    if [ ! -z "$postgres_container_name" ]; then
+        if docker exec $postgres_container_name pg_isready -U postgres > /dev/null 2>&1; then
+            echo "PostgreSQL está funcionando para N8N!"
+            # Criar banco de dados do N8N (se ainda não existe)
+            docker exec $postgres_container_name psql -U postgres -d postgres -c "CREATE DATABASE n8n;" < /dev/null >> instalacao_n8n.log 2>&1 && echo "Banco n8n criado com sucesso!"
+            break
+        fi
+    fi
+    echo "Aguardando PostgreSQL para N8N... ($i/30)"
+    sleep 2
+done
+
 curl -sSL "https://instalador.automacaosemlimites.com.br/arquivos/instalador/stack/n8n.yaml" -o "n8n.yaml"
 #Executar o Stack do n8n
 env DOMINIO_N8N="$DOMINIO_N8N" WEBHOOK_N8N="$WEBHOOK_N8N" POSTGRES_PASSWORD="$POSTGRES_PASSWORD" N8N_KEY="$N8N_KEY" docker stack deploy --prune --resolve-image always -c n8n.yaml n8n >> instalacao_n8n.log 2>&1 && echo "n8n instalado com sucesso!"
 
 echo "Instalação concluída"
 
+# Verificar status dos serviços
 echo ""
+echo "======================================================="
+echo "           VERIFICANDO STATUS DOS SERVIÇOS            "
+echo "======================================================="
+echo ""
+
+# Aguardar serviços iniciarem
+echo "⏳ Aguardando serviços iniciarem completamente..."
+sleep 60
+
+# Verificar PostgreSQL
+echo "🔍 Verificando PostgreSQL..."
+postgres_container=$(docker ps --filter "name=postgres_postgres" --format "{{.Names}}")
+if [ ! -z "$postgres_container" ]; then
+    if docker exec $postgres_container pg_isready -U postgres > /dev/null 2>&1; then
+        echo "✅ PostgreSQL: FUNCIONANDO"
+    else
+        echo "❌ PostgreSQL: COM PROBLEMAS"
+    fi
+else
+    echo "❌ PostgreSQL: CONTAINER NÃO ENCONTRADO"
+fi
+
+# Verificar Redis
+echo "🔍 Verificando Redis..."
+redis_container=$(docker ps --filter "name=redis_redis" --format "{{.Names}}")
+if [ ! -z "$redis_container" ]; then
+    if docker exec $redis_container redis-cli ping > /dev/null 2>&1; then
+        echo "✅ Redis: FUNCIONANDO"
+    else
+        echo "❌ Redis: COM PROBLEMAS"
+    fi
+else
+    echo "❌ Redis: CONTAINER NÃO ENCONTRADO"
+fi
+
+# Verificar Evolution API
+echo "🔍 Verificando Evolution API..."
+evolution_container=$(docker ps --filter "name=evolution_evolution-api" --format "{{.Names}}")
+if [ ! -z "$evolution_container" ]; then
+    echo "✅ Evolution API: CONTAINER EXECUTANDO"
+else
+    echo "❌ Evolution API: CONTAINER NÃO ENCONTRADO"
+fi
+
+# Verificar N8N
+echo "🔍 Verificando N8N..."
+n8n_container=$(docker ps --filter "name=n8n" --format "{{.Names}}")
+if [ ! -z "$n8n_container" ]; then
+    echo "✅ N8N: CONTAINER EXECUTANDO"
+else
+    echo "❌ N8N: CONTAINER NÃO ENCONTRADO"
+fi
+
+echo ""
+
 echo "======================================================="
 echo "           INSTALAÇÃO CONCLUÍDA COM SUCESSO!           "
 echo "======================================================="
@@ -260,6 +371,16 @@ echo "🚀 DOCUMENTAÇÃO EVOLUTION API:"
 echo "   • Endpoint base: https://$DOMINIO_EVOLUTION"
 echo "   • Swagger/Docs: https://$DOMINIO_EVOLUTION/manager/docs"
 echo "   • Header de autenticação: apikey: $EVOLUTION_API_KEY"
+echo ""
+echo "🔧 COMANDOS ÚTEIS:"
+echo "   • Ver logs dos containers: docker service logs [nome-do-serviço]"
+echo "   • Verificar status: docker stack ps [nome-da-stack]"
+echo "   • Reiniciar serviço: docker service update --force [nome-do-serviço]"
+echo ""
+echo "⚠️ IMPORTANTE:"
+echo "   • Aguarde 2-3 minutos para todos os serviços iniciarem completamente"
+echo "   • Se Evolution API não funcionar, verifique os logs: docker service logs evolution_evolution-api"
+echo "   • Se houver erro de SSL, aguarde alguns minutos para certificados serem gerados"
 echo ""
 echo "======================================================="
 echo "  GUARDE ESSAS INFORMAÇÕES EM LOCAL SEGURO!"
