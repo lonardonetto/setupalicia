@@ -116,7 +116,23 @@ docker stack deploy --prune --resolve-image always -c redis.yaml redis >> instal
 
 #Stack do Evolution API
 echo "Configurando a Evolution API com domínio $DOMINIO_EVOLUTION"
-sleep 30
+echo "Aguardando PostgreSQL ficar disponível..."
+sleep 60
+
+# Verificar se PostgreSQL está funcionando
+echo "Testando conexão com PostgreSQL..."
+for i in {1..30}; do
+    postgres_container_name=$(docker ps --filter "name=postgres_postgres" --format "{{.Names}}")
+    if [ ! -z "$postgres_container_name" ]; then
+        if docker exec $postgres_container_name pg_isready -U postgres > /dev/null 2>&1; then
+            echo "PostgreSQL está funcionando!"
+            break
+        fi
+    fi
+    echo "Aguardando PostgreSQL... ($i/30)"
+    sleep 2
+done
+
 postgres_container_name=$(docker ps --filter "name=postgres_postgres" --format "{{.Names}}")
 #criar banco
 docker exec $postgres_container_name psql -U postgres -d postgres -c "CREATE DATABASE evolution;" < /dev/null >> instalacao_n8n.log 2>&1 && echo "Banco Evolution criado com sucesso!"
@@ -142,7 +158,7 @@ services:
       - DEL_INSTANCE=false
       - DATABASE_ENABLED=true
       - DATABASE_PROVIDER=postgresql
-      - DATABASE_CONNECTION_URI=postgresql://postgres:${POSTGRES_PASSWORD}@postgres_postgres:5432/evolution?schema=public
+      - DATABASE_CONNECTION_URI=postgresql://postgres:${POSTGRES_PASSWORD}@postgres_postgres:5432/evolution?schema=public&sslmode=disable
       - DATABASE_CONNECTION_CLIENT_NAME=evolution_db
       - DATABASE_SAVE_DATA_INSTANCE=false
       - DATABASE_SAVE_DATA_NEW_MESSAGE=false
@@ -221,4 +237,32 @@ env DOMINIO_N8N="$DOMINIO_N8N" WEBHOOK_N8N="$WEBHOOK_N8N" POSTGRES_PASSWORD="$PO
 
 echo "Instalação concluída"
 
-echo "Feche essa janela do terminal e acessar o endereço do portainer e depois do n8n"
+echo ""
+echo "======================================================="
+echo "           INSTALAÇÃO CONCLUÍDA COM SUCESSO!           "
+echo "======================================================="
+echo ""
+echo "🌐 URLs DE ACESSO:"
+echo "   • Portainer: https://$DOMINIO_PORTAINER"
+echo "   • N8N: https://$DOMINIO_N8N"
+echo "   • Evolution API: https://$DOMINIO_EVOLUTION"
+echo "   • Webhook N8N: https://$WEBHOOK_N8N"
+echo ""
+echo "🔑 CREDENCIAIS IMPORTANTES:"
+echo "   • Evolution API Key: $EVOLUTION_API_KEY"
+echo "   • PostgreSQL Password: $POSTGRES_PASSWORD"
+echo "   • N8N Encryption Key: $N8N_KEY"
+echo ""
+echo "📁 ARQUIVO DE CONFIGURAÇÃO:"
+echo "   Todas as credenciais foram salvas em: .env"
+echo ""
+echo "🚀 DOCUMENTAÇÃO EVOLUTION API:"
+echo "   • Endpoint base: https://$DOMINIO_EVOLUTION"
+echo "   • Swagger/Docs: https://$DOMINIO_EVOLUTION/manager/docs"
+echo "   • Header de autenticação: apikey: $EVOLUTION_API_KEY"
+echo ""
+echo "======================================================="
+echo "  GUARDE ESSAS INFORMAÇÕES EM LOCAL SEGURO!"
+echo "======================================================="
+echo ""
+echo "Feche essa janela do terminal e acesse os endereços acima."
