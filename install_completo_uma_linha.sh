@@ -137,20 +137,31 @@ log_success "Docker Swarm configurado com IP: $endereco_ip"
 # Função para aguardar serviço
 wait_service() {
     local service=$1
-    local max_wait=120
+    local max_wait=300  # Aumentado para 5 minutos
     local count=0
     
     log_info "Aguardando $service ficar pronto..."
     while [ $count -lt $max_wait ]; do
-        if docker service ps $service 2>/dev/null | grep -q "Running"; then
-            log_success "$service está funcionando!"
-            return 0
+        # Verificar se o serviço existe
+        if docker service ls --filter name=$service --format "{{.Name}}" | grep -q "$service"; then
+            # Verificar se está rodando
+            if docker service ps $service 2>/dev/null | grep -q "Running"; then
+                log_success "$service está funcionando!"
+                return 0
+            elif docker service ps $service 2>/dev/null | grep -q "Failed\|Rejected"; then
+                log_error "$service falhou no deploy!"
+                docker service ps $service
+                docker service logs $service --tail 20
+                return 1
+            fi
         fi
         sleep 5
         ((count+=5))
-        echo -n "."
+        if [ $((count % 30)) -eq 0 ]; then
+            echo "   ... ainda aguardando $service ($count/${max_wait}s)"
+        fi
     done
-    log_error "$service não ficou pronto"
+    log_error "$service não ficou pronto após $max_wait segundos"
     return 1
 }
 
@@ -315,7 +326,55 @@ networks:
 EOF
 
 env DOMINIO_EVOLUTION="$DOMINIO_EVOLUTION" POSTGRES_PASSWORD="$POSTGRES_PASSWORD" EVOLUTION_API_KEY="$EVOLUTION_API_KEY" docker stack deploy --prune --resolve-image always -c evolution.yaml evolution >> instalacao_completa.log 2>&1
-wait_service "evolution_evolution-api"
+
+# Aguardar deployment da Evolution API com monitoramento ativo
+log_info "Aguardando deployment da Evolution API..."
+sleep 10
+
+# Verificar se o stack foi criado
+if ! docker stack ls | grep -q "evolution"; then
+    log_error "Stack evolution não foi criada!"
+    log_info "Tentando recriar o stack..."
+    env DOMINIO_EVOLUTION="$DOMINIO_EVOLUTION" POSTGRES_PASSWORD="$POSTGRES_PASSWORD" EVOLUTION_API_KEY="$EVOLUTION_API_KEY" docker stack deploy --prune --resolve-image always -c evolution.yaml evolution
+fi
+
+# Aguardar o serviço ficar disponível
+log_info "Monitorando criação do container Evolution API..."
+for i in {1..60}; do
+    # Verificar se o serviço existe
+    if docker service ls | grep -q "evolution_evolution-api"; then
+        log_success "Serviço evolution_evolution-api criado!"
+        break
+    fi
+    echo "   Tentativa $i/60 - Aguardando serviço ser criado..."
+    sleep 5
+done
+
+# Aguardar container ficar em execução
+log_info "Aguardando container Evolution API inicializar..."
+for i in {1..120}; do
+    if docker ps --filter "name=evolution_evolution-api" --format "{{.Names}}" | grep -q "evolution"; then
+        log_success "Container Evolution API está executando!"
+        break
+    fi
+    
+    # Verificar se há problemas
+    service_status=$(docker service ps evolution_evolution-api --format "{{.CurrentState}}" 2>/dev/null | head -1)
+    if echo "$service_status" | grep -q "Failed\|Rejected"; then
+        log_error "Evolution API falhou: $service_status"
+        log_info "Verificando logs..."
+        docker service logs evolution_evolution-api --tail 20
+        
+        log_info "Forçando restart do serviço..."
+        docker service update --force evolution_evolution-api
+        sleep 30
+    fi
+    
+    echo "   Tentativa $i/120 - Status: $service_status"
+    sleep 5
+done
+
+log_success "Evolution API configurada!"
 
 # Instalar N8N
 log_info "Instalando N8N..."
@@ -323,13 +382,134 @@ curl -sSL "https://instalador.automacaosemlimites.com.br/arquivos/instalador/sta
 env DOMINIO_N8N="$DOMINIO_N8N" WEBHOOK_N8N="$WEBHOOK_N8N" POSTGRES_PASSWORD="$POSTGRES_PASSWORD" N8N_KEY="$N8N_KEY" docker stack deploy --prune --resolve-image always -c n8n.yaml n8n >> instalacao_completa.log 2>&1
 wait_service "n8n_n8n"
 
-# Verificação final
-log_info "Verificação final dos serviços..."
-sleep 30
+# Verificação final com aguardo extra
+log_info "Verificação final dos serviços (aguardando estabilização)..."
+sleep 60
+
+# Verificação mais robusta dos serviços
+log_info "Executando verificação detalhada..."
+
+all_services_ok=true
+
+# PostgreSQL
+postgres_container=$(docker ps --filter "name=postgres_postgres" --format "{{.Names}}" | head -1)
+if [ ! -z "$postgres_container" ] && docker exec $postgres_container pg_isready -U postgres >/dev/null 2>&1; then
+    log_success "✅ PostgreSQL: FUNCIONANDO"
+else
+    log_error "❌ PostgreSQL: COM PROBLEMAS"
+    all_services_ok=false
+fi
+
+# Redis
+redis_container=$(docker ps --filter "name=redis_redis" --format "{{.Names}}" | head -1)
+if [ ! -z "$redis_container" ] && docker exec $redis_container redis-cli ping >/dev/null 2>&1; then
+    log_success "✅ Redis: FUNCIONANDO"
+else
+    log_error "❌ Redis: COM PROBLEMAS"
+    all_services_ok=false
+fi
+
+# Evolution API - Verificação mais detalhada
+log_info "Verificando Evolution API detalhadamente..."
+evolution_container=$(docker ps --filter "name=evolution_evolution-api" --format "{{.Names}}" | head -1)
+if [ ! -z "$evolution_container" ]; then
+    log_success "✅ Evolution API: CONTAINER EXECUTANDO"
+    
+    # Verificar se o serviço está respondendo (aguardar até 2 minutos)
+    log_info "Testando responsividade da Evolution API..."
+    for i in {1..24}; do
+        if curl -s -o /dev/null -w "%{http_code}" http://localhost:8080 | grep -q "[2-4][0-9][0-9]"; then
+            log_success "✅ Evolution API: RESPONDENDO"
+            break
+        fi
+        echo "   Tentativa $i/24 - Aguardando API responder..."
+        sleep 5
+    done
+else
+    log_error "❌ Evolution API: CONTAINER NÃO ENCONTRADO"
+    
+    # Diagnóstico detalhado
+    log_info "Executando diagnóstico da Evolution API..."
+    
+    if docker service ls | grep -q "evolution_evolution-api"; then
+        log_info "Serviço existe, verificando status..."
+        docker service ps evolution_evolution-api
+        
+        log_info "Últimos logs do serviço:"
+        docker service logs evolution_evolution-api --tail 30
+        
+        # Tentar forçar restart
+        log_info "Forçando restart da Evolution API..."
+        docker service update --force evolution_evolution-api
+        
+        # Aguardar mais um tempo
+        log_info "Aguardando após restart..."
+        sleep 60
+        
+        # Verificar novamente
+        evolution_container=$(docker ps --filter "name=evolution_evolution-api" --format "{{.Names}}" | head -1)
+        if [ ! -z "$evolution_container" ]; then
+            log_success "✅ Evolution API: FUNCIONANDO APÓS RESTART"
+        else
+            log_error "❌ Evolution API: AINDA COM PROBLEMAS"
+            all_services_ok=false
+        fi
+    else
+        log_error "Serviço evolution_evolution-api não existe!"
+        log_info "Tentando recriar a stack evolution..."
+        
+        # Remover e recriar
+        docker stack rm evolution
+        sleep 30
+        env DOMINIO_EVOLUTION="$DOMINIO_EVOLUTION" POSTGRES_PASSWORD="$POSTGRES_PASSWORD" EVOLUTION_API_KEY="$EVOLUTION_API_KEY" docker stack deploy --prune --resolve-image always -c evolution.yaml evolution
+        
+        # Aguardar criação
+        sleep 60
+        evolution_container=$(docker ps --filter "name=evolution_evolution-api" --format "{{.Names}}" | head -1)
+        if [ ! -z "$evolution_container" ]; then
+            log_success "✅ Evolution API: FUNCIONANDO APÓS RECRIAÇÃO"
+        else
+            log_error "❌ Evolution API: FALHA NA RECRIAÇÃO"
+            all_services_ok=false
+        fi
+    fi
+fi
+
+# N8N
+n8n_container=$(docker ps --filter "name=n8n" --format "{{.Names}}" | head -1)
+if [ ! -z "$n8n_container" ]; then
+    log_success "✅ N8N: CONTAINER EXECUTANDO"
+else
+    log_error "❌ N8N: CONTAINER NÃO ENCONTRADO"
+    all_services_ok=false
+fi
+
+# Traefik
+traefik_container=$(docker ps --filter "name=traefik_traefik" --format "{{.Names}}" | head -1)
+if [ ! -z "$traefik_container" ]; then
+    log_success "✅ Traefik: FUNCIONANDO"
+else
+    log_error "❌ Traefik: COM PROBLEMAS"
+    all_services_ok=false
+fi
+
+# Portainer
+portainer_container=$(docker ps --filter "name=portainer_portainer" --format "{{.Names}}" | head -1)
+if [ ! -z "$portainer_container" ]; then
+    log_success "✅ Portainer: FUNCIONANDO"
+else
+    log_error "❌ Portainer: COM PROBLEMAS"
+    all_services_ok=false
+fi
 
 echo ""
 echo "======================================================="
-echo "🎉 INSTALAÇÃO COMPLETA FINALIZADA COM SUCESSO!"
+if [ "$all_services_ok" = true ]; then
+    echo "🎉 INSTALAÇÃO COMPLETA FINALIZADA COM SUCESSO!"
+else
+    echo "⚠️ INSTALAÇÃO FINALIZADA COM ALGUNS PROBLEMAS"
+    echo "Execute os comandos de diagnóstico abaixo para resolver"
+fi
 echo "======================================================="
 echo ""
 echo "🌐 URLS DE ACESSO:"
@@ -348,15 +528,36 @@ echo "📊 STATUS DOS SERVIÇOS:"
 docker service ls
 echo ""
 echo "🔧 COMANDOS ÚTEIS:"
-echo "   • Ver logs: docker service logs [nome-do-serviço]"
-echo "   • Reiniciar: docker service update --force [nome-do-serviço]"
-echo "   • Status: docker stack ps [nome-da-stack]"
+echo "   • Ver logs Evolution: docker service logs evolution_evolution-api --tail 50"
+echo "   • Reiniciar Evolution: docker service update --force evolution_evolution-api"
+echo "   • Status Evolution: docker service ps evolution_evolution-api"
+echo "   • Containers ativos: docker ps"
+echo "   • Verificar stacks: docker stack ls"
 echo ""
+if [ "$all_services_ok" = false ]; then
+    echo "🔍 DIAGNÓSTICO PROBLEMAS:"
+    echo "   • Se Evolution API não aparece:"
+    echo "     docker service logs evolution_evolution-api --tail 50"
+    echo "     docker service update --force evolution_evolution-api"
+    echo "   • Se container não sobe:"
+    echo "     docker stack rm evolution"
+    echo "     sleep 30"
+    echo "     env \$(cat .env | xargs) docker stack deploy -c evolution.yaml evolution"
+    echo "   • Verificar recursos:"
+    echo "     docker system df"
+    echo "     free -h"
+    echo ""
+fi
 echo "⚠️ IMPORTANTE:"
 echo "   • Aguarde 2-3 minutos para SSL ser gerado"
 echo "   • Todos os domínios devem apontar para este IP: $endereco_ip"
 echo "   • Portas 80 e 443 devem estar abertas no firewall"
+echo "   • Se Evolution API demorar, é normal - aguarde até 5 minutos"
 echo ""
 echo "======================================================="
-echo "✅ TUDO FUNCIONANDO! ACESSE OS LINKS ACIMA"
+if [ "$all_services_ok" = true ]; then
+    echo "✅ TUDO FUNCIONANDO! ACESSE OS LINKS ACIMA"
+else
+    echo "⚠️ ALGUNS SERVIÇOS PRECISAM DE ATENÇÃO"
+fi
 echo "======================================================="
