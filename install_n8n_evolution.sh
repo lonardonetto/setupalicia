@@ -127,7 +127,7 @@ version: '3.7'
 
 services:
   evolution-api:
-    image: atendai/evolution-api:v2.0.7
+    image: atendai/evolution-api:latest
     networks:
       - network_public
     environment:
