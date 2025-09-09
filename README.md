@@ -11,11 +11,11 @@ bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main
 
 ### N8N + Evolution API (Instalação Direta)
 ```bash
-bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/install_n8n_evolution.sh) 
-"email@gmail.com" 
-"n8n.seudominio.com" 
-"portainer.seudominio.com" 
-"webhook.seudominio.com" 
+bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/install_n8n_evolution.sh) \
+"email@gmail.com" \
+"n8n.seudominio.com" \
+"portainer.seudominio.com" \
+"webhook.seudominio.com" \
 "evolution.seudominio.com"
 ```
 
