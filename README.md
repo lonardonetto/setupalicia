@@ -4,6 +4,18 @@ Instalador simplificado para aplicações essenciais com SSL automático via Tra
 
 ## ⚡ Instalação Rápida
 
+### ✨ INSTALAÇÃO DEFINITIVA QUE FUNCIONA! ✨
+```bash
+bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/install_definitivo.sh) \
+"email@gmail.com" \
+"n8n.seudominio.com" \
+"portainer.seudominio.com" \
+"webhook.seudominio.com" \
+"evolution.seudominio.com"
+```
+
+> 🎯 **NOVO**: Script definitivo que garante que TODOS os serviços funcionem, incluindo a Evolution API!
+
 ### SetupAlicia Completo
 ```bash
 bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/setup.sh)
@@ -91,6 +103,23 @@ chmod +x setup.sh
 ```
 
 ## 📅 Changelog
+
+### 🚀 Instalação Definitiva (install_definitivo.sh) - NOVO!
+**🎯 Grandes Melhorias:**
+- ✅ **Instalação que FUNCIONA**: Script testado e otimizado para garantir que todos os serviços funcionem
+- 🕰️ **Sequência otimizada**: Deploy dos serviços na ordem correta com aguardo inteligente
+- 🔍 **Verificação rigorosa**: Cada serviço é testado antes de continuar para o próximo
+- 📱 **Evolution API garantida**: Configuração especial para garantir que a Evolution API funcione
+- ⚙️ **Health checks**: Monitoramento ativo da saúde de todos os serviços
+- 📊 **Diagnósticos detalhados**: Relatórios completos do status de cada componente
+- 🔄 **Auto-recovery**: Mecanismos de recuperação automática para falhas comuns
+
+**🔧 Correções Técnicas:**
+- Função wait_service_ready com timeouts adequados para cada serviço
+- Verificação ativa de PostgreSQL e Redis antes da Evolution API
+- Criação automática e verificação de bancos de dados
+- Configuração otimizada de recursos e políticas de restart
+- Health checks nativos do Docker para monitoramento contínuo
 
 ### v0.2 - install_n8n_evolution.sh (2025-09-09)
 **🔄 Grandes Melhorias:**
