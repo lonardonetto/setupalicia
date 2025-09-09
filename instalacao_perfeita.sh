@@ -75,13 +75,6 @@ echo "🔗 Webhook: $WEBHOOK_N8N"
 echo "📱 Evolution: $DOMINIO_EVOLUTION"
 echo ""
 
-# Verificar se é root
-if [ "$EUID" -eq 0 ]; then
-    log_error "❌ Este script NÃO deve ser executado como root!"
-    log_info "Execute como usuário normal com sudo."
-    exit 1
-fi
-
 # Verificar conectividade com a internet
 log_info "🌐 Verificando conectividade com a internet..."
 if ! ping -c 1 google.com >/dev/null 2>&1; then
@@ -118,62 +111,61 @@ sudo timedatectl set-timezone America/Sao_Paulo
 # Verificar e configurar firewall
 log_info "🔥 Configurando firewall..."
 if command -v ufw >/dev/null 2>&1; then
-    sudo ufw allow 22/tcp >/dev/null 2>&1 || true
-    sudo ufw allow 80/tcp >/dev/null 2>&1 || true
-    sudo ufw allow 443/tcp >/dev/null 2>&1 || true
+    ufw allow 22/tcp >/dev/null 2>&1 || true
+    ufw allow 80/tcp >/dev/null 2>&1 || true
+    ufw allow 443/tcp >/dev/null 2>&1 || true
     log_success "✅ Firewall configurado!"
 fi
 
 # Atualizar sistema
 log_info "📦 Atualizando sistema..."
 {
-    sudo apt update -y &&
-    sudo apt upgrade -y &&
-    sudo apt-get install -y curl wget gnupg lsb-release ca-certificates apt-transport-https software-properties-common
+    apt update -y &&
+    apt upgrade -y &&
+    apt-get install -y curl wget gnupg lsb-release ca-certificates apt-transport-https software-properties-common
 } >> instalacao_perfeita.log 2>&1
 
 # Aguardar liberação do lock do apt
-while sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1; do
+while fuser /var/lib/dpkg/lock >/dev/null 2>&1; do
     sleep 5
 done
 
 # Configurar swap se necessário
 log_info "💾 Configurando swap..."
 if [ ! -f /swapfile ]; then
-    sudo fallocate -l 4G /swapfile
-    sudo chmod 600 /swapfile
-    sudo mkswap /swapfile >/dev/null 2>&1
-    sudo swapon /swapfile
-    echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab >/dev/null
+    fallocate -l 4G /swapfile
+    chmod 600 /swapfile
+    mkswap /swapfile >/dev/null 2>&1
+    swapon /swapfile
+    echo "/swapfile none swap sw 0 0" | tee -a /etc/fstab >/dev/null
 fi
 
 # Configurar hostname
 log_info "🏷️ Configurando hostname..."
-sudo hostnamectl set-hostname manager1
-sudo sed -i "s/127.0.0.1.*/127.0.0.1 manager1/" /etc/hosts
+hostnamectl set-hostname manager1
+sed -i "s/127.0.0.1.*/127.0.0.1 manager1/" /etc/hosts
 
 # Remover Docker antigo se existir
 log_info "🧹 Removendo instalações antigas do Docker..."
-sudo systemctl stop docker >/dev/null 2>&1 || true
-sudo apt-get remove -y docker docker-engine docker.io containerd runc >/dev/null 2>&1 || true
+systemctl stop docker >/dev/null 2>&1 || true
+apt-get remove -y docker docker-engine docker.io containerd runc >/dev/null 2>&1 || true
 
 # Instalar Docker mais recente
 log_info "🐋 Instalando Docker mais recente..."
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-sudo apt-get update >/dev/null 2>&1
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io >/dev/null 2>&1
+apt-get update >/dev/null 2>&1
+apt-get install -y docker-ce docker-ce-cli containerd.io >/dev/null 2>&1
 
 # Configurar Docker
-sudo systemctl enable docker
-sudo systemctl start docker
-sudo usermod -aG docker $USER
+systemctl enable docker
+systemctl start docker
 
 # Aguardar Docker inicializar
 log_info "⏳ Aguardando Docker inicializar..."
 for i in {1..30}; do
-    if sudo docker ps >/dev/null 2>&1; then
+    if docker ps >/dev/null 2>&1; then
         log_success "✅ Docker funcionando!"
         break
     fi
@@ -188,14 +180,14 @@ server_ip=$(curl -s ifconfig.me || curl -s icanhazip.com || hostname -I | cut -d
 log_info "IP do servidor detectado: $server_ip"
 
 # Limpar Swarm antigo se existir
-sudo docker swarm leave --force >/dev/null 2>&1 || true
+docker swarm leave --force >/dev/null 2>&1 || true
 
 # Inicializar novo Swarm
-if sudo docker swarm init --advertise-addr $server_ip >/dev/null 2>&1; then
+if docker swarm init --advertise-addr $server_ip >/dev/null 2>&1; then
     log_success "✅ Docker Swarm inicializado!"
 else
     log_warning "⚠️ Tentando método alternativo..."
-    sudo docker swarm init >/dev/null 2>&1
+    docker swarm init >/dev/null 2>&1
     log_success "✅ Docker Swarm inicializado (método alternativo)!"
 fi
 
@@ -203,7 +195,7 @@ fi
 sleep 10
 
 # Verificar se Swarm está funcionando
-if sudo docker node ls >/dev/null 2>&1; then
+if docker node ls >/dev/null 2>&1; then
     log_success "✅ Docker Swarm funcionando corretamente!"
 else
     log_error "❌ Falha no Docker Swarm!"
@@ -212,7 +204,7 @@ fi
 
 # Criar rede overlay
 log_info "🌐 Criando rede overlay..."
-sudo docker network create --driver=overlay network_public >/dev/null 2>&1 || true
+docker network create --driver=overlay network_public >/dev/null 2>&1 || true
 
 # Função para aguardar serviço com verificação robusta
 wait_service_perfect() {
@@ -224,7 +216,7 @@ wait_service_perfect() {
     
     # Aguardar serviço aparecer
     for i in $(seq 1 60); do
-        if sudo docker service ls --filter name=$service_name --format "{{.Name}}" | grep -q "$service_name"; then
+        if docker service ls --filter name=$service_name --format "{{.Name}}" | grep -q "$service_name"; then
             break
         fi
         sleep 5
@@ -232,7 +224,7 @@ wait_service_perfect() {
     
     # Aguardar container ficar ativo
     for i in $(seq 1 $max_wait); do
-        if sudo docker ps --filter "name=$service_name" --format "{{.Names}}" | grep -q "$service_name"; then
+        if docker ps --filter "name=$service_name" --format "{{.Names}}" | grep -q "$service_name"; then
             # Se tem URL para testar, testar
             if [ ! -z "$check_url" ]; then
                 sleep 30 # Aguardar serviço estabilizar
@@ -317,8 +309,8 @@ networks:
     external: true
 EOF
 
-sudo docker volume create traefik_letsencrypt >/dev/null 2>&1
-sudo docker stack deploy --prune --resolve-image always -c traefik_perfeito.yaml traefik
+docker volume create traefik_letsencrypt >/dev/null 2>&1
+docker stack deploy --prune --resolve-image always -c traefik_perfeito.yaml traefik
 wait_service_perfect "traefik" 120
 
 # 2. INSTALAR PORTAINER
@@ -381,9 +373,9 @@ networks:
     attachable: true
 EOF
 
-sudo docker volume create portainer_data >/dev/null 2>&1
-sudo docker network create --driver=overlay agent_network >/dev/null 2>&1
-sudo docker stack deploy --prune --resolve-image always -c portainer_perfeito.yaml portainer
+docker volume create portainer_data >/dev/null 2>&1
+docker network create --driver=overlay agent_network >/dev/null 2>&1
+docker stack deploy --prune --resolve-image always -c portainer_perfeito.yaml portainer
 wait_service_perfect "portainer" 120
 
 # 3. INSTALAR POSTGRESQL
@@ -427,8 +419,8 @@ networks:
     external: true
 EOF
 
-sudo docker volume create postgres_data >/dev/null 2>&1
-sudo docker stack deploy --prune --resolve-image always -c postgres_perfeito.yaml postgres
+docker volume create postgres_data >/dev/null 2>&1
+docker stack deploy --prune --resolve-image always -c postgres_perfeito.yaml postgres
 wait_service_perfect "postgres" 180
 
 # 4. INSTALAR REDIS
@@ -465,8 +457,8 @@ networks:
     external: true
 EOF
 
-sudo docker volume create redis_data >/dev/null 2>&1
-sudo docker stack deploy --prune --resolve-image always -c redis_perfeito.yaml redis
+docker volume create redis_data >/dev/null 2>&1
+docker stack deploy --prune --resolve-image always -c redis_perfeito.yaml redis
 wait_service_perfect "redis" 120
 
 # Aguardar bancos estabilizarem
@@ -476,11 +468,11 @@ sleep 60
 # Criar bancos de dados
 log_info "🗃️ Criando bancos de dados..."
 for i in {1..30}; do
-    postgres_container=$(sudo docker ps --filter "name=postgres_postgres" --format "{{.Names}}" | head -1)
+    postgres_container=$(docker ps --filter "name=postgres_postgres" --format "{{.Names}}" | head -1)
     if [ ! -z "$postgres_container" ]; then
-        if sudo docker exec $postgres_container pg_isready -U postgres >/dev/null 2>&1; then
-            sudo docker exec $postgres_container psql -U postgres -d postgres -c "CREATE DATABASE evolution;" 2>/dev/null || true
-            sudo docker exec $postgres_container psql -U postgres -d postgres -c "CREATE DATABASE n8n;" 2>/dev/null || true
+        if docker exec $postgres_container pg_isready -U postgres >/dev/null 2>&1; then
+            docker exec $postgres_container psql -U postgres -d postgres -c "CREATE DATABASE evolution;" 2>/dev/null || true
+            docker exec $postgres_container psql -U postgres -d postgres -c "CREATE DATABASE n8n;" 2>/dev/null || true
             log_success "✅ Bancos de dados criados!"
             break
         fi
@@ -493,8 +485,8 @@ done
 log_info "📱 Instalando Evolution API...")
 
 # Criar volumes
-sudo docker volume create evolution_instances >/dev/null 2>&1
-sudo docker volume create evolution_store >/dev/null 2>&1
+docker volume create evolution_instances >/dev/null 2>&1
+docker volume create evolution_store >/dev/null 2>&1
 
 cat > evolution_perfeito.yaml <<EOF
 version: '3.7'
@@ -590,7 +582,7 @@ networks:
     external: true
 EOF
 
-sudo docker stack deploy --prune --resolve-image always -c evolution_perfeito.yaml evolution
+docker stack deploy --prune --resolve-image always -c evolution_perfeito.yaml evolution
 wait_service_perfect "evolution" 300
 
 # 6. INSTALAR N8N
@@ -660,8 +652,8 @@ networks:
     external: true
 EOF
 
-sudo docker volume create n8n_data >/dev/null 2>&1
-sudo docker stack deploy --prune --resolve-image always -c n8n_perfeito.yaml n8n
+docker volume create n8n_data >/dev/null 2>&1
+docker stack deploy --prune --resolve-image always -c n8n_perfeito.yaml n8n
 wait_service_perfect "n8n" 300
 
 # AGUARDAR CERTIFICADOS SSL SEREM GERADOS
@@ -678,11 +670,11 @@ all_perfect=true
 
 # Verificar serviços
 echo "📊 STATUS DOS SERVIÇOS:"
-sudo docker service ls
+docker service ls
 
 echo ""
 echo "🐳 CONTAINERS ATIVOS:"
-sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
 echo ""
 echo "🔐 VERIFICAÇÃO SSL:"
