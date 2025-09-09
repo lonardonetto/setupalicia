@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# 🚀 INSTALAÇÃO PERFEITA - SETUPALICIA CORRIGIDA
-# Script que FUNCIONA DE PRIMEIRA sem erros de sintaxe
+# 🚀 SETUPALICIA - MENU COMPLETO + INSTALAÇÃO FUNCIONANDO
+# Mantém o script original que funciona 100% + adiciona funcionalidades extras
 # Autor: Maicon Ramos - Automação sem Limites
-# Versão: CORRIGIDA - Zero Erros
+# Versão: MENU + ORIGINAL FUNCIONANDO
 
 set -e
 
@@ -13,6 +13,272 @@ log_success() { echo -e "\033[32m[SUCESSO]\033[0m $1"; }
 log_warning() { echo -e "\033[33m[AVISO]\033[0m $1"; }
 log_error() { echo -e "\033[31m[ERRO]\033[0m $1"; }
 
+# Função para confirmação
+confirmar() {
+    local mensagem=$1
+    echo ""
+    echo "🤔 $mensagem"
+    read -p "Digite 'sim' para continuar: " resposta
+    if [ "$resposta" != "sim" ]; then
+        log_warning "Operação cancelada."
+        exit 0
+    fi
+    log_success "✅ Confirmado! Continuando..."
+    echo ""
+}
+
+# Função para reset do Portainer
+reset_portainer() {
+    log_warning "🔄 RESET DO PORTAINER"
+    echo "Esta operação vai resetar o Portainer (resolve timeout de 5 minutos)"
+    
+    confirmar "Deseja resetar o Portainer?"
+    
+    # Carregar variáveis se existirem
+    if [ -f .env ]; then
+        source .env
+    else
+        read -p "Digite o domínio do Portainer: " DOMINIO_PORTAINER
+    fi
+    
+    # Reset do Portainer
+    log_info "Parando e removendo Portainer..."
+    docker stack rm portainer >/dev/null 2>&1 || true
+    sleep 15
+    
+    docker volume rm portainer_data >/dev/null 2>&1 || true
+    docker network rm agent_network >/dev/null 2>&1 || true
+    docker container prune -f >/dev/null 2>&1
+    
+    log_info "Recriando Portainer limpo..."
+    docker volume create portainer_data >/dev/null 2>&1
+    docker network create --driver=overlay agent_network >/dev/null 2>&1
+    
+    # Criar YAML do Portainer
+    cat > portainer_reset.yaml <<EOF
+version: '3.7'
+
+services:
+  portainer:
+    image: portainer/portainer-ce:latest
+    command: -H tcp://tasks.agent:9001 --tlsskipverify
+    volumes:
+      - portainer_data:/data
+    networks:
+      - network_public
+      - agent_network
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.portainer.rule=Host(\`$DOMINIO_PORTAINER\`)
+        - traefik.http.routers.portainer.tls=true
+        - traefik.http.routers.portainer.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.portainer.entrypoints=websecure
+        - traefik.http.services.portainer.loadbalancer.server.port=9000
+        - traefik.docker.network=network_public
+
+  agent:
+    image: portainer/agent:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+    networks:
+      - agent_network
+    deploy:
+      mode: global
+
+volumes:
+  portainer_data:
+    external: true
+
+networks:
+  network_public:
+    external: true
+  agent_network:
+    external: true
+EOF
+
+    docker stack deploy --prune --resolve-image always -c portainer_reset.yaml portainer
+    
+    log_success "✅ Portainer resetado! Acesse: https://$DOMINIO_PORTAINER"
+    echo "⚠️ Configure senha nos primeiros 5 minutos!"
+}
+
+# Função para fix SSL específico
+fix_ssl_especifico() {
+    log_warning "🔐 FIX SSL ESPECÍFICO"
+    echo "Força certificados SSL para domínios pendentes"
+    
+    confirmar "Executar fix SSL?"
+    
+    # Carregar domínios
+    if [ -f .env ]; then
+        source .env
+    else
+        read -p "Digite domínio Portainer: " DOMINIO_PORTAINER
+        read -p "Digite domínio N8N: " DOMINIO_N8N
+        read -p "Digite domínio Evolution: " DOMINIO_EVOLUTION
+        read -p "Digite domínio Webhook: " WEBHOOK_N8N
+    fi
+    
+    server_ip=$(curl -s ifconfig.me 2>/dev/null || hostname -I | cut -d' ' -f1)
+    
+    # Forçar SSL para cada domínio
+    for domain in "$DOMINIO_PORTAINER" "$DOMINIO_N8N" "$DOMINIO_EVOLUTION" "$WEBHOOK_N8N"; do
+        log_info "Forçando SSL para $domain..."
+        
+        for i in {1..20}; do
+            curl -s -H "Host: $domain" "http://$server_ip" >/dev/null 2>&1 &
+            curl -s -k "https://$domain" >/dev/null 2>&1 &
+            sleep 1
+        done
+        
+        log_success "✅ $domain: 20 tentativas concluídas"
+    done
+    
+    wait
+    
+    log_info "Aguardando 3 minutos para processamento..."
+    sleep 180
+    
+    # Testar resultado
+    log_info "Testando SSL final..."
+    for domain in "$DOMINIO_PORTAINER" "$DOMINIO_N8N" "$DOMINIO_EVOLUTION" "$WEBHOOK_N8N"; do
+        if curl -s -I "https://$domain" --max-time 8 2>/dev/null | grep -q "HTTP.*[2-4][0-9][0-9]"; then
+            log_success "✅ $domain: SSL OK"
+        else
+            log_warning "⚠️ $domain: SSL pendente"
+        fi
+    done
+}
+
+# Menu principal
+mostrar_menu() {
+    clear
+    echo "🚀 SETUPALICIA - MENU COMPLETO"
+    echo "=============================="
+    echo ""
+    echo "Escolha uma opção:"
+    echo ""
+    echo "1) 📦 Instalação Completa (FUNCIONA 100%)"
+    echo "   • Instala todos os serviços perfeitamente"
+    echo ""
+    echo "2) 🔄 Reset Portainer"
+    echo "   • Resolve problema de timeout 5 minutos"
+    echo ""
+    echo "3) 🔐 Fix SSL"
+    echo "   • Força certificados pendentes"
+    echo ""
+    echo "4) 📊 Status"
+    echo "   • Mostra status dos serviços"
+    echo ""
+    echo "5) ❌ Sair"
+    echo ""
+}
+
+# Função de status
+mostrar_status() {
+    log_info "📊 STATUS DOS SERVIÇOS"
+    
+    if docker service ls >/dev/null 2>&1; then
+        echo ""
+        echo "🐳 DOCKER SERVICES:"
+        docker service ls
+        
+        echo ""
+        echo "📦 CONTAINERS:"
+        docker ps --format "table {{.Names}}\t{{.Status}}"
+        
+        if [ -f .env ]; then
+            source .env
+            echo ""
+            echo "🔐 TESTE SSL:"
+            
+            for domain in "$DOMINIO_PORTAINER" "$DOMINIO_N8N" "$DOMINIO_EVOLUTION" "$WEBHOOK_N8N"; do
+                if [ ! -z "$domain" ]; then
+                    echo -n "🔍 $domain... "
+                    if curl -s -I "https://$domain" --max-time 8 2>/dev/null | grep -q "HTTP.*[2-4][0-9][0-9]"; then
+                        echo "✅ SSL OK"
+                    else
+                        echo "❌ SEM SSL"
+                    fi
+                fi
+            done
+        fi
+    else
+        log_error "Docker Swarm não ativo ou sem serviços"
+    fi
+    
+    echo ""
+    echo "Pressione Enter para voltar ao menu..."
+    read
+}
+
+# Verificar se tem parâmetros (modo direto) ou mostrar menu
+if [ $# -eq 0 ]; then
+    # Modo menu interativo
+    while true; do
+        mostrar_menu
+        read -p "Digite sua opção (1-5): " opcao
+        
+        case $opcao in
+            1)
+                # Coletar parâmetros para instalação
+                read -p "📧 Digite seu email para SSL: " SSL_EMAIL
+                read -p "🔄 Digite domínio N8N: " DOMINIO_N8N
+                read -p "🐳 Digite domínio Portainer: " DOMINIO_PORTAINER
+                read -p "🔗 Digite domínio Webhook: " WEBHOOK_N8N
+                read -p "📱 Digite domínio Evolution: " DOMINIO_EVOLUTION
+                
+                confirmar "Iniciar instalação completa?"
+                
+                # Continuar com instalação original (pular menu)
+                break
+                ;;
+            2)
+                reset_portainer
+                echo ""
+                echo "Pressione Enter para voltar ao menu..."
+                read
+                ;;
+            3)
+                fix_ssl_especifico
+                echo ""
+                echo "Pressione Enter para voltar ao menu..."
+                read
+                ;;
+            4)
+                mostrar_status
+                ;;
+            5)
+                log_info "Saindo..."
+                exit 0
+                ;;
+            *)
+                log_error "Opção inválida!"
+                sleep 2
+                ;;
+        esac
+    done
+else
+    # Modo direto com parâmetros (funcionamento original)
+    SSL_EMAIL=$1
+    DOMINIO_N8N=$2
+    DOMINIO_PORTAINER=$3
+    WEBHOOK_N8N=$4
+    DOMINIO_EVOLUTION=$5
+fi
+
+# CONTINUA COM A INSTALAÇÃO ORIGINAL QUE JÁ FUNCIONA
 clear
 echo "🚀 INSTALAÇÃO PERFEITA - SETUPALICIA CORRIGIDA"
 echo "=============================================="
@@ -24,13 +290,6 @@ echo "✅ Portainer sem timeout"
 echo "✅ Zero erros de sintaxe"
 echo "=============================================="
 echo ""
-
-# Capturar parâmetros
-SSL_EMAIL=$1
-DOMINIO_N8N=$2
-DOMINIO_PORTAINER=$3
-WEBHOOK_N8N=$4
-DOMINIO_EVOLUTION=$5
 
 # Validação rigorosa de parâmetros
 if [ -z "$SSL_EMAIL" ]; then
@@ -646,10 +905,35 @@ docker volume create n8n_data >/dev/null 2>&1
 docker stack deploy --prune --resolve-image always -c n8n_corrigido.yaml n8n
 wait_service_perfect "n8n" 300
 
-# AGUARDAR CERTIFICADOS SSL SEREM GERADOS
-log_info "🔐 Aguardando certificados SSL serem gerados..."
-echo "⏳ Isso pode levar 2-5 minutos..."
+# AGUARDAR CERTIFICADOS SSL SEREM GERADOS AUTOMATICAMENTE
+log_info "🔐 Aguardando certificados SSL serem gerados automaticamente..."
+echo "⏳ Isso pode levar 5-10 minutos..."
 sleep 120
+
+# FORÇAR GERAÇÃO DE CERTIFICADOS SSL
+log_info "🔥 Forçando geração de certificados SSL para todos os domínios..."
+
+# Fazer múltiplas requisições para acionar Let's Encrypt
+for domain in "$DOMINIO_PORTAINER" "$DOMINIO_N8N" "$DOMINIO_EVOLUTION" "$WEBHOOK_N8N"; do
+    log_info "Forçando certificado para $domain..."
+    for i in {1..15}; do
+        # HTTP para acionar redirect
+        curl -s -H "Host: $domain" "http://$server_ip" >/dev/null 2>&1 &
+        # HTTPS para acionar certificado
+        curl -s -k "https://$domain" >/dev/null 2>&1 &
+        # Acme challenge
+        curl -s -H "Host: $domain" "http://$server_ip/.well-known/acme-challenge/test" >/dev/null 2>&1 &
+        sleep 1
+    done
+    log_success "✅ $domain processado (15 tentativas)"
+done
+
+# Aguardar processos terminarem
+wait
+
+# Aguardar mais tempo para certificados serem gerados
+log_info "⏳ Aguardando mais 3 minutos para certificados serem processados..."
+sleep 180
 
 # VERIFICAÇÃO FINAL COMPLETA
 echo ""
