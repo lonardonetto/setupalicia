@@ -10,7 +10,30 @@ DOMINIO_PORTAINER=$3
 WEBHOOK_N8N=$4
 DOMINIO_EVOLUTION=$5
 
-echo "Iniciando instalação.."
+# Verificar se todos os parâmetros foram fornecidos
+if [ -z "$SSL_EMAIL" ] || [ -z "$DOMINIO_N8N" ] || [ -z "$DOMINIO_PORTAINER" ] || [ -z "$WEBHOOK_N8N" ] || [ -z "$DOMINIO_EVOLUTION" ]; then
+    echo "❌ ERRO: Parâmetros obrigatórios não fornecidos!"
+    echo ""
+    echo "📋 Uso correto:"
+    echo "./install_n8n_evolution.sh \"seu@email.com\" \"n8n.seudominio.com\" \"portainer.seudominio.com\" \"webhook.seudominio.com\" \"evolution.seudominio.com\""
+    echo ""
+    echo "📝 Parâmetros:"
+    echo "1. SSL_EMAIL: Seu email para certificados SSL"
+    echo "2. DOMINIO_N8N: Domínio para N8N"
+    echo "3. DOMINIO_PORTAINER: Domínio para Portainer"
+    echo "4. WEBHOOK_N8N: Domínio para Webhook N8N"
+    echo "5. DOMINIO_EVOLUTION: Domínio para Evolution API"
+    echo ""
+    exit 1
+fi
+
+echo "🚀 Iniciando instalação completa..."
+echo "📧 Email SSL: $SSL_EMAIL"
+echo "🔄 N8N: $DOMINIO_N8N"
+echo "🐳 Portainer: $DOMINIO_PORTAINER"
+echo "🔗 Webhook: $WEBHOOK_N8N"
+echo "📱 Evolution API: $DOMINIO_EVOLUTION"
+echo ""
 
 N8N_KEY=$(openssl rand -hex 16)
 POSTGRES_PASSWORD=$(openssl rand -base64 12)
