@@ -124,26 +124,156 @@ sudo sed -i "s/127.0.0.1.*/127.0.0.1 manager1/" /etc/hosts
 # Instalar Docker
 log_info "🐋 Instalando Docker..."
 if ! command -v docker &> /dev/null; then
-    curl -fsSL https://get.docker.com | bash >> instalacao_definitiva.log 2>&1
+    log_info "Docker não encontrado, instalando..."
+    if curl -fsSL https://get.docker.com | bash >> instalacao_definitiva.log 2>&1; then
+        log_success "✅ Docker instalado com sucesso!"
+    else
+        log_error "❌ Falha ao instalar Docker!"
+        exit 1
+    fi
+    
+    log_info "Adicionando usuário ao grupo docker..."
     sudo usermod -aG docker $USER
+    
+    log_info "Reiniciando serviço Docker..."
+    sudo systemctl restart docker
+    sleep 5
+else
+    log_success "✅ Docker já está instalado!"
+fi
+
+# Verificar se Docker está funcionando
+log_info "Verificando funcionamento do Docker..."
+for i in {1..30}; do
+    if docker ps >/dev/null 2>&1; then
+        log_success "✅ Docker está funcionando!"
+        break
+    fi
+    log_info "Tentativa $i/30 - Aguardando Docker inicializar..."
+    sleep 2
+done
+
+if ! docker ps >/dev/null 2>&1; then
+    log_error "❌ Docker não está funcionando após 60 segundos!"
+    exit 1
 fi
 
 # Configurar Docker Swarm
 log_info "🔧 Configurando Docker Swarm..."
-endereco_ip=$(ip route get 8.8.8.8 | grep -oP 'src \K[^ ]+')
+
+# Múltiplos métodos para obter IP com fallback
+log_info "Detectando endereço IP do servidor..."
+endereco_ip=""
+
+# Método 1: ip route (mais comum)
+if [ -z "$endereco_ip" ]; then
+    endereco_ip=$(ip route get 8.8.8.8 2>/dev/null | grep -oE 'src [0-9.]+' | cut -d' ' -f2 | head -1)
+fi
+
+# Método 2: hostname -I (fallback)
+if [ -z "$endereco_ip" ]; then
+    endereco_ip=$(hostname -I | cut -d' ' -f1)
+fi
+
+# Método 3: interface eth0 (fallback)
+if [ -z "$endereco_ip" ]; then
+    endereco_ip=$(ip -4 addr show eth0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -1)
+fi
+
+# Método 4: interface ens3 (VPS comum)
+if [ -z "$endereco_ip" ]; then
+    endereco_ip=$(ip -4 addr show ens3 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -1)
+fi
+
+# Método 5: qualquer interface (último recurso)
+if [ -z "$endereco_ip" ]; then
+    endereco_ip=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1)
+fi
+
 if [[ -z $endereco_ip ]]; then
-    log_error "Não foi possível obter o endereço IP."
-    exit 1
+    log_error "❌ Não foi possível obter o endereço IP do servidor!"
+    log_info "Tentando continuar com IP local..."
+    endereco_ip="127.0.0.1"
 fi
 
-# Inicializar Swarm se não estiver ativo
-if ! docker info --format '{{.Swarm.LocalNodeState}}' | grep -q "active"; then
-    docker swarm init --advertise-addr $endereco_ip >> instalacao_definitiva.log 2>&1
+log_info "IP detectado: $endereco_ip"
+
+# Verificar se Docker está funcionando
+log_info "Verificando se Docker está funcionando..."
+if ! docker ps >/dev/null 2>&1; then
+    log_error "❌ Docker não está funcionando! Tentando reiniciar..."
+    sudo systemctl restart docker
+    sleep 10
+    
+    if ! docker ps >/dev/null 2>&1; then
+        log_error "❌ Docker ainda não está funcionando!"
+        exit 1
+    fi
+fi
+log_success "✅ Docker está funcionando!"
+
+# Verificar estado atual do Swarm de forma mais robusta
+log_info "Verificando estado do Docker Swarm..."
+swarm_status="inactive"
+
+# Tentar diferentes métodos para verificar Swarm
+if docker info 2>/dev/null | grep -q "Swarm: active"; then
+    swarm_status="active"
+elif docker node ls >/dev/null 2>&1; then
+    swarm_status="active"
 fi
 
-# Criar rede se não existir
-if ! docker network ls | grep -q "network_public"; then
-    docker network create --driver=overlay network_public >> instalacao_definitiva.log 2>&1
+log_info "Estado atual do Swarm: $swarm_status"
+
+# Inicializar Swarm se necessário
+if [ "$swarm_status" != "active" ]; then
+    log_info "Inicializando Docker Swarm..."
+    if docker swarm init --advertise-addr $endereco_ip >> instalacao_definitiva.log 2>&1; then
+        log_success "✅ Docker Swarm inicializado com sucesso!"
+    else
+        log_warning "⚠️ Falha ao inicializar Swarm. Tentando sem --advertise-addr..."
+        if docker swarm init >> instalacao_definitiva.log 2>&1; then
+            log_success "✅ Docker Swarm inicializado (método alternativo)!"
+        else
+            log_error "❌ Falha ao inicializar Docker Swarm!"
+            log_info "Verificando se já existe um Swarm..."
+            if docker node ls >/dev/null 2>&1; then
+                log_warning "⚠️ Swarm já existe, continuando..."
+            else
+                exit 1
+            fi
+        fi
+    fi
+else
+    log_success "✅ Docker Swarm já está ativo!"
+fi
+
+# Aguardar Swarm estabilizar
+log_info "Aguardando Swarm estabilizar..."
+sleep 5
+
+# Verificar se conseguimos listar nodes
+for i in {1..10}; do
+    if docker node ls >/dev/null 2>&1; then
+        log_success "✅ Swarm está funcionando corretamente!"
+        break
+    fi
+    log_info "Tentativa $i/10 - Aguardando Swarm..."
+    sleep 2
+done
+
+# Criar rede overlay se não existir
+log_info "Criando rede overlay network_public..."
+if docker network ls | grep -q "network_public"; then
+    log_success "✅ Rede network_public já existe!"
+else
+    if docker network create --driver=overlay network_public >> instalacao_definitiva.log 2>&1; then
+        log_success "✅ Rede network_public criada!"
+    else
+        log_error "❌ Falha ao criar rede network_public!"
+        # Tentar continuar mesmo assim
+        log_warning "⚠️ Continuando sem a rede overlay..."
+    fi
 fi
 
 log_success "✅ Docker Swarm configurado com IP: $endereco_ip"
@@ -158,46 +288,93 @@ wait_service_ready() {
     log_info "⏳ Aguardando $service_name ficar pronto..."
     
     # Aguardar serviço existir
+    log_info "Verificando se serviço $service_name existe..."
     local count=0
     while [ $count -lt 60 ]; do
-        if docker service ls --filter name=$service_name --format "{{.Name}}" | grep -q "$service_name"; then
+        if docker service ls --filter name=$service_name --format "{{.Name}}" 2>/dev/null | grep -q "$service_name"; then
+            log_success "✅ Serviço $service_name encontrado!"
             break
+        fi
+        if [ $((count % 15)) -eq 0 ]; then
+            log_info "   ... aguardando serviço aparecer (${count}s)"
         fi
         sleep 5
         ((count+=5))
     done
     
+    if [ $count -ge 60 ]; then
+        log_error "❌ Serviço $service_name não foi encontrado após 60s"
+        log_info "Listando todos os serviços disponíveis:"
+        docker service ls
+        return 1
+    fi
+    
     # Aguardar container ficar ativo
+    log_info "Aguardando container do $service_name ficar ativo..."
     count=0
     while [ $count -lt $max_wait ]; do
         local container=$(docker ps --filter "$container_filter" --format "{{.Names}}" | head -1)
         if [ ! -z "$container" ]; then
+            log_success "✅ Container encontrado: $container"
+            
             if [ ! -z "$check_command" ]; then
+                log_info "Executando verificação de saúde..."
                 if eval "$check_command" >/dev/null 2>&1; then
                     log_success "✅ $service_name está funcionando!"
                     return 0
+                else
+                    log_info "   ... verificação de saúde falhou, aguardando..."
                 fi
             else
                 log_success "✅ $service_name está funcionando!"
                 return 0
             fi
+        else
+            # Verificar se o serviço tem problemas
+            local service_status=$(docker service ps $service_name --format "{{.CurrentState}}" 2>/dev/null | head -1)
+            if echo "$service_status" | grep -q "Failed\|Rejected"; then
+                log_warning "⚠️ Problema detectado em $service_name: $service_status"
+                log_info "Tentando forçar restart do serviço..."
+                docker service update --force $service_name >/dev/null 2>&1
+                sleep 10
+            fi
         fi
         
         if [ $((count % 30)) -eq 0 ]; then
             echo "   ... aguardando $service_name ($count/${max_wait}s)"
+            log_info "Status atual do serviço:"
+            docker service ps $service_name 2>/dev/null || echo "   Serviço não encontrado"
         fi
         sleep 5
         ((count+=5))
     done
     
     log_error "❌ $service_name não ficou pronto após $max_wait segundos"
+    log_info "Status final do serviço:"
+    docker service ps $service_name 2>/dev/null
+    log_info "Logs do serviço:"
+    docker service logs $service_name --tail 10 2>/dev/null
     return 1
 }
 
 # 1. INSTALAR TRAEFIK
 log_info "🔐 Instalando Traefik..."
-curl -sSL "https://instalador.automacaosemlimites.com.br/arquivos/instalador/stack/traefik.yaml" -o "traefik.yaml"
-env SSL_EMAIL="$SSL_EMAIL" docker stack deploy --prune --resolve-image always -c traefik.yaml traefik >> instalacao_definitiva.log 2>&1
+log_info "Baixando arquivo traefik.yaml..."
+if curl -sSL "https://instalador.automacaosemlimites.com.br/arquivos/instalador/stack/traefik.yaml" -o "traefik.yaml"; then
+    log_success "✅ Arquivo traefik.yaml baixado!"
+else
+    log_error "❌ Falha ao baixar traefik.yaml!"
+    exit 1
+fi
+
+log_info "Fazendo deploy da stack traefik..."
+if env SSL_EMAIL="$SSL_EMAIL" docker stack deploy --prune --resolve-image always -c traefik.yaml traefik >> instalacao_definitiva.log 2>&1; then
+    log_success "✅ Stack traefik deployada!"
+else
+    log_error "❌ Falha ao fazer deploy da stack traefik!"
+    exit 1
+fi
+
 wait_service_ready "traefik_traefik" "name=traefik_traefik" 120
 
 # 2. INSTALAR PORTAINER
