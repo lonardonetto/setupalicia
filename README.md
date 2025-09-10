@@ -4,17 +4,26 @@ Instalador simplificado para aplicações essenciais com SSL automático via Tra
 
 ## ⚡ Instalação Rápida
 
-### ✨ INSTALAÇÃO DEFINITIVA QUE FUNCIONA! ✨
+### ✨ MENU COMPLETO COM RESET PORTAINER E FIX SSL ✨
 ```bash
-bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/install_definitivo.sh) \
-"email@gmail.com" \
-"n8n.seudominio.com" \
-"portainer.seudominio.com" \
-"webhook.seudominio.com" \
-"evolution.seudominio.com"
+bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/setup_menu_completo.sh)
 ```
 
-> 🎯 **NOVO**: Script definitivo que garante que TODOS os serviços funcionem, incluindo a Evolution API!
+**🎯 OPÇÕES DO MENU:**
+1. **📦 Instalação Completa** - Instala todos os serviços
+2. **🔄 Reset Portainer** - Resolve timeout de 5 minutos
+3. **🔐 Fix SSL** - Força certificados Portainer/N8N
+4. **📊 Status** - Mostra status de todos os serviços
+
+### ✅ COMANDO ÚNICO (INSTALAÇÃO DIRETA):
+```bash
+bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/instalacao_corrigida.sh) \
+"seu@email.com" \
+"editor.seudominio.com" \
+"painel.seudominio.com" \
+"webhook.seudominio.com" \
+"evo.seudominio.com"
+```
 
 ### SetupAlicia Completo
 ```bash

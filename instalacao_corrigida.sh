@@ -136,19 +136,19 @@ fix_ssl_especifico() {
     for domain in "$DOMINIO_PORTAINER" "$DOMINIO_N8N" "$DOMINIO_EVOLUTION" "$WEBHOOK_N8N"; do
         log_info "Forçando SSL para $domain..."
         
-        for i in {1..20}; do
+        for i in {1..30}; do
             curl -s -H "Host: $domain" "http://$server_ip" >/dev/null 2>&1 &
             curl -s -k "https://$domain" >/dev/null 2>&1 &
-            sleep 1
+            sleep 2
         done
         
-        log_success "✅ $domain: 20 tentativas concluídas"
+        log_success "✅ $domain: 30 tentativas concluídas (AUMENTADAS!)"
     done
     
     wait
     
-    log_info "Aguardando 3 minutos para processamento..."
-    sleep 180
+    log_info "Aguardando 10 minutos para processamento - TEMPO AUMENTADO!"
+    sleep 600
     
     # Testar resultado
     log_info "Testando SSL final..."
@@ -288,6 +288,8 @@ echo "✅ Evolution API funcionando"
 echo "✅ Todos os serviços com HTTPS"
 echo "✅ Portainer sem timeout"
 echo "✅ Zero erros de sintaxe"
+echo "✅ REDIRECIONAMENTO HTTP→HTTPS CORRIGIDO!"
+echo "✅ Tempos de SSL AUMENTADOS para 15+ minutos!"
 echo "=============================================="
 echo ""
 
@@ -590,12 +592,17 @@ services:
         window: 120s
       labels:
         - traefik.enable=true
+        # HTTPS Router
         - traefik.http.routers.portainer.rule=Host(\`$DOMINIO_PORTAINER\`)
         - traefik.http.routers.portainer.tls=true
         - traefik.http.routers.portainer.tls.certresolver=letsencryptresolver
         - traefik.http.routers.portainer.entrypoints=websecure
         - traefik.http.services.portainer.loadbalancer.server.port=9000
         - traefik.http.routers.portainer.service=portainer
+        # HTTP Redirect para HTTPS
+        - traefik.http.routers.portainer-redirect.rule=Host(\`$DOMINIO_PORTAINER\`)
+        - traefik.http.routers.portainer-redirect.entrypoints=web
+        - traefik.http.routers.portainer-redirect.middlewares=redirect-to-https
         - traefik.docker.network=network_public
 
   agent:
@@ -812,12 +819,17 @@ services:
           cpus: '0.5'
       labels:
         - traefik.enable=true
+        # HTTPS Router Evolution
         - traefik.http.routers.evolution.rule=Host(\`$DOMINIO_EVOLUTION\`)
         - traefik.http.routers.evolution.tls=true
         - traefik.http.routers.evolution.tls.certresolver=letsencryptresolver
         - traefik.http.routers.evolution.entrypoints=websecure
         - traefik.http.services.evolution.loadbalancer.server.port=8080
         - traefik.http.routers.evolution.service=evolution
+        # HTTP Redirect para HTTPS
+        - traefik.http.routers.evolution-redirect.rule=Host(\`$DOMINIO_EVOLUTION\`)
+        - traefik.http.routers.evolution-redirect.entrypoints=web
+        - traefik.http.routers.evolution-redirect.middlewares=redirect-to-https
         - traefik.docker.network=network_public
 
 volumes:
@@ -880,17 +892,27 @@ services:
           memory: 1G
       labels:
         - traefik.enable=true
+        # HTTPS Router N8N
         - traefik.http.routers.n8n.rule=Host(\`$DOMINIO_N8N\`)
         - traefik.http.routers.n8n.tls=true
         - traefik.http.routers.n8n.tls.certresolver=letsencryptresolver
         - traefik.http.routers.n8n.entrypoints=websecure
         - traefik.http.services.n8n.loadbalancer.server.port=5678
         - traefik.http.routers.n8n.service=n8n
+        # HTTP Redirect para HTTPS
+        - traefik.http.routers.n8n-redirect.rule=Host(\`$DOMINIO_N8N\`)
+        - traefik.http.routers.n8n-redirect.entrypoints=web
+        - traefik.http.routers.n8n-redirect.middlewares=redirect-to-https
+        # HTTPS Router Webhook
         - traefik.http.routers.webhook.rule=Host(\`$WEBHOOK_N8N\`)
         - traefik.http.routers.webhook.tls=true
         - traefik.http.routers.webhook.tls.certresolver=letsencryptresolver
         - traefik.http.routers.webhook.entrypoints=websecure
         - traefik.http.routers.webhook.service=n8n
+        # HTTP Redirect Webhook para HTTPS
+        - traefik.http.routers.webhook-redirect.rule=Host(\`$WEBHOOK_N8N\`)
+        - traefik.http.routers.webhook-redirect.entrypoints=web
+        - traefik.http.routers.webhook-redirect.middlewares=redirect-to-https
         - traefik.docker.network=network_public
 
 volumes:
@@ -907,8 +929,8 @@ wait_service_perfect "n8n" 300
 
 # AGUARDAR CERTIFICADOS SSL SEREM GERADOS AUTOMATICAMENTE
 log_info "🔐 Aguardando certificados SSL serem gerados automaticamente..."
-echo "⏳ Isso pode levar 5-10 minutos..."
-sleep 120
+echo "⏳ Isso pode levar 10-15 minutos - AUMENTAMOS O TEMPO!"
+sleep 300
 
 # FORÇAR GERAÇÃO DE CERTIFICADOS SSL
 log_info "🔥 Forçando geração de certificados SSL para todos os domínios..."
@@ -916,24 +938,24 @@ log_info "🔥 Forçando geração de certificados SSL para todos os domínios..
 # Fazer múltiplas requisições para acionar Let's Encrypt
 for domain in "$DOMINIO_PORTAINER" "$DOMINIO_N8N" "$DOMINIO_EVOLUTION" "$WEBHOOK_N8N"; do
     log_info "Forçando certificado para $domain..."
-    for i in {1..15}; do
+    for i in {1..30}; do
         # HTTP para acionar redirect
         curl -s -H "Host: $domain" "http://$server_ip" >/dev/null 2>&1 &
         # HTTPS para acionar certificado
         curl -s -k "https://$domain" >/dev/null 2>&1 &
         # Acme challenge
         curl -s -H "Host: $domain" "http://$server_ip/.well-known/acme-challenge/test" >/dev/null 2>&1 &
-        sleep 1
+        sleep 2
     done
-    log_success "✅ $domain processado (15 tentativas)"
+    log_success "✅ $domain processado (30 tentativas - AUMENTADAS!)"
 done
 
 # Aguardar processos terminarem
 wait
 
 # Aguardar mais tempo para certificados serem gerados
-log_info "⏳ Aguardando mais 3 minutos para certificados serem processados..."
-sleep 180
+log_info "⏳ Aguardando mais 10 minutos para certificados serem processados..."
+sleep 600
 
 # VERIFICAÇÃO FINAL COMPLETA
 echo ""
@@ -984,12 +1006,14 @@ echo ""
 echo "⚠️ IMPORTANTE:"
 echo "   ✅ Todos os serviços foram instalados sem erros"
 echo "   ✅ SSL automático configurado e funcionando"
-echo "   ✅ Redirecionamento HTTP→HTTPS ativo"
+echo "   ✅ Redirecionamento HTTP→HTTPS ativo (CORRIGIDO!)"
 echo "   ✅ Evolution API funcionando com banco de dados"
 echo "   ✅ Zero erros de sintaxe"
+echo "   ✅ Tempos de SSL aumentados para 15+ minutos"
 echo ""
 echo "⏰ Se algum link ainda mostrar 'Não seguro':"
-echo "   • Aguarde 2-5 minutos para certificados serem gerados"
+echo "   • Aguarde 10-15 minutos para certificados serem gerados"
+echo "   • Agora você pode digitar SEM https:// que funciona!"
 echo "   • Limpe o cache do navegador (Ctrl+F5)"
 echo "   • Verifique se o DNS aponta para: $server_ip"
 echo ""
