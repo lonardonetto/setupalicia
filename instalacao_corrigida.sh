@@ -147,8 +147,8 @@ fix_ssl_especifico() {
     
     wait
     
-    log_info "Aguardando 5 minutos para processamento SSL..."
-    sleep 300
+    log_info "Aguardando 3 minutos para processamento SSL..."
+    sleep 180
     
     # Testar resultado
     log_info "Testando SSL final..."
@@ -963,8 +963,8 @@ wait_service_perfect "n8n" 300
 
 # AGUARDAR CERTIFICADOS SSL SEREM GERADOS AUTOMATICAMENTE
 log_info "🔐 Aguardando certificados SSL serem gerados automaticamente..."
-echo "⏳ Processamento SSL otimizado - 5 minutos"
-sleep 180
+echo "⏳ Processamento SSL otimizado - 3 minutos"
+sleep 120
 
 # FORÇAR GERAÇÃO DE CERTIFICADOS SSL
 log_info "🔥 Forçando geração de certificados SSL para todos os domínios..."
@@ -988,8 +988,8 @@ done
 wait
 
 # Aguardar mais tempo para certificados serem gerados
-log_info "⏳ Aguardando 2 minutos para certificados serem processados..."
-sleep 120
+log_info "⏳ Aguardando 90 segundos para certificados serem processados..."
+sleep 90
 
 # VERIFICAÇÃO FINAL COMPLETA
 echo "╔══════════════════════════════════════════════════════════════╗"
@@ -1050,7 +1050,7 @@ echo "├───────────────────────�
 echo "│ • SSL automático configurado com Let's Encrypt                │"
 echo "│ • Redirecionamento HTTP→HTTPS ativo                          │"
 echo "│ • Todos os serviços funcionando com SSL                        │"
-echo "│ • Aguarde 5 minutos para certificados serem processados        │"
+echo "│ • Aguarde 3-4 minutos para certificados serem processados        │"
 echo "│ • IP do servidor: $server_ip                    │"
 echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
