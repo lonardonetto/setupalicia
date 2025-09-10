@@ -922,6 +922,18 @@ wait_service_perfect "evolution" 300
 # Verificar SSL do Evolution imediatamente
 check_ssl_domain "$DOMINIO_EVOLUTION" "Evolution API"
 
+echo ""
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│               ⚠️  IMPORTANTE - EVOLUTION API                   │"
+echo "├──────────────────────────────────────────────────────────────┤"
+echo "│ 🌐 Acesse: https://$DOMINIO_EVOLUTION                       │"
+echo "│ 🔑 API Key: $EVOLUTION_API_KEY"
+echo "│ 📱 Para conectar WhatsApp: POST /instance/create          │"
+echo "│ 🗃️ Documentation: /manager ou /docs                        │"
+echo "│ ⚡ Status da API: GET /                                    │"
+echo "└──────────────────────────────────────────────────────────────┘"
+echo ""
+
 # 6. INSTALAR N8N
 echo ""
 echo "┌──────────────────────────────────────────────────────────────┐"
