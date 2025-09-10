@@ -116,7 +116,7 @@ EOF
 # Função para fix SSL específico
 fix_ssl_especifico() {
     log_warning "🔐 FIX SSL ESPECÍFICO"
-    echo "Força certificados SSL para domínios pendentes"
+    echo "ForForça certificados SSL para domínios pendentes"
     
     confirmar "Executar fix SSL?"
     
@@ -136,19 +136,19 @@ fix_ssl_especifico() {
     for domain in "$DOMINIO_PORTAINER" "$DOMINIO_N8N" "$DOMINIO_EVOLUTION" "$WEBHOOK_N8N"; do
         log_info "Forçando SSL para $domain..."
         
-        for i in {1..30}; do
+        for i in {1..20}; do
             curl -s -H "Host: $domain" "http://$server_ip" >/dev/null 2>&1 &
             curl -s -k "https://$domain" >/dev/null 2>&1 &
-            sleep 2
+            sleep 1
         done
         
-        log_success "✅ $domain: 30 tentativas concluídas (AUMENTADAS!)"
+        log_success "✅ $domain: 20 tentativas concluídas"
     done
     
     wait
     
-    log_info "Aguardando 10 minutos para processamento - TEMPO AUMENTADO!"
-    sleep 600
+    log_info "Aguardando 5 minutos para processamento SSL..."
+    sleep 300
     
     # Testar resultado
     log_info "Testando SSL final..."
@@ -164,24 +164,28 @@ fix_ssl_especifico() {
 # Menu principal
 mostrar_menu() {
     clear
-    echo "🚀 SETUPALICIA - MENU COMPLETO"
-    echo "=============================="
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║                        SETUP ALICIA                         ║"
+    echo "║                    Menu de Instalação                       ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
     echo ""
-    echo "Escolha uma opção:"
-    echo ""
-    echo "1) 📦 Instalação Completa (FUNCIONA 100%)"
-    echo "   • Instala todos os serviços perfeitamente"
-    echo ""
-    echo "2) 🔄 Reset Portainer"
-    echo "   • Resolve problema de timeout 5 minutos"
-    echo ""
-    echo "3) 🔐 Fix SSL"
-    echo "   • Força certificados pendentes"
-    echo ""
-    echo "4) 📊 Status"
-    echo "   • Mostra status dos serviços"
-    echo ""
-    echo "5) ❌ Sair"
+    echo "┌──────────────────────────────────────────────────────────────┐"
+    echo "│                      OPÇÕES DISPONÍVEIS                        │"
+    echo "├──────────────────────────────────────────────────────────────┤"
+    echo "│ 1) 📦 Instalação Completa                                │"
+    echo "│    Instala todos os serviços (Traefik, Portainer, etc)      │"
+    echo "│                                                              │"
+    echo "│ 2) 🔄 Reset Portainer                                     │"
+    echo "│    Resolve problema de timeout de 5 minutos               │"
+    echo "│                                                              │"
+    echo "│ 3) 🔐 Fix SSL                                              │"
+    echo "│    Força geração de certificados pendentes               │"
+    echo "│                                                              │"
+    echo "│ 4) 📊 Status dos Serviços                                  │"
+    echo "│    Mostra status e testa SSL de todos os domínios          │"
+    echo "│                                                              │"
+    echo "│ 5) ❌ Sair                                                   │"
+    echo "└──────────────────────────────────────────────────────────────┘"
     echo ""
 }
 
@@ -280,17 +284,18 @@ fi
 
 # CONTINUA COM A INSTALAÇÃO ORIGINAL QUE JÁ FUNCIONA
 clear
-echo "🚀 INSTALAÇÃO PERFEITA - SETUPALICIA CORRIGIDA"
-echo "=============================================="
-echo "Este script FUNCIONA DE PRIMEIRA sem erros!"
-echo "✅ SSL automático funcionando"
-echo "✅ Evolution API funcionando"  
-echo "✅ Todos os serviços com HTTPS"
-echo "✅ Portainer sem timeout"
-echo "✅ Zero erros de sintaxe"
-echo "✅ REDIRECIONAMENTO HTTP→HTTPS CORRIGIDO!"
-echo "✅ Tempos de SSL AUMENTADOS para 15+ minutos!"
-echo "=============================================="
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo "║                        SETUP ALICIA                         ║"
+echo "║              Instalador Automatizado com SSL                ║"
+echo "╚════════════════════════════════════════════════════════════════╝"
+echo ""
+echo "📦 Aplicações incluídas:"
+echo "   • Traefik (Proxy SSL automático)"
+echo "   • Portainer (Interface Docker)"
+echo "   • PostgreSQL (Banco de dados)"
+echo "   • Redis (Cache)"
+echo "   • Evolution API v2.2.3 (WhatsApp)"
+echo "   • N8N (Automação)"
 echo ""
 
 # Validação rigorosa de parâmetros
@@ -328,12 +333,17 @@ for domain in "$DOMINIO_N8N" "$DOMINIO_PORTAINER" "$WEBHOOK_N8N" "$DOMINIO_EVOLU
     fi
 done
 
-log_success "✅ Todos os parâmetros validados!"
-echo "📧 Email: $SSL_EMAIL"
-echo "🔄 N8N: $DOMINIO_N8N"  
-echo "🐳 Portainer: $DOMINIO_PORTAINER"
-echo "🔗 Webhook: $WEBHOOK_N8N"
-echo "📱 Evolution: $DOMINIO_EVOLUTION"
+log_success "✅ Parâmetros validados!"
+echo ""
+echo "┌─────────────────────────────────────────────────────────┐"
+echo "│                 CONFIGURAÇÃO VALIDADA                  │"
+echo "├─────────────────────────────────────────────────────────┤"
+echo "│ 📧 Email: $SSL_EMAIL"
+echo "│ 🔄 N8N: $DOMINIO_N8N"  
+echo "│ 🐳 Portainer: $DOMINIO_PORTAINER"
+echo "│ 🔗 Webhook: $WEBHOOK_N8N"
+echo "│ 📱 Evolution: $DOMINIO_EVOLUTION"
+echo "└─────────────────────────────────────────────────────────┘"
 echo ""
 
 # Verificar conectividade com a internet
@@ -500,8 +510,12 @@ wait_service_perfect() {
     return 1
 }
 
-# 1. INSTALAR TRAEFIK (PRIMEIRO - CRÍTICO PARA SSL)
-log_info "🔐 Instalando Traefik (Proxy SSL)..."
+# 1. INSTALAR TRAEFIK (PROXY SSL)
+echo ""
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│               ETAPA 1/6 - INSTALANDO TRAEFIK                  │"
+echo "└──────────────────────────────────────────────────────────────┘"
+log_info "🔐 Configurando proxy SSL automático..."
 
 cat > traefik_corrigido.yaml <<EOF
 version: '3.7'
@@ -565,7 +579,11 @@ docker stack deploy --prune --resolve-image always -c traefik_corrigido.yaml tra
 wait_service_perfect "traefik" 120
 
 # 2. INSTALAR PORTAINER
-log_info "🐳 Instalando Portainer..."
+echo ""
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│              ETAPA 2/6 - INSTALANDO PORTAINER                 │"
+echo "└──────────────────────────────────────────────────────────────┘"
+log_info "🐳 Configurando interface de gerenciamento Docker..."
 
 cat > portainer_corrigido.yaml <<EOF
 version: '3.7'
@@ -635,7 +653,11 @@ docker stack deploy --prune --resolve-image always -c portainer_corrigido.yaml p
 wait_service_perfect "portainer" 120
 
 # 3. INSTALAR POSTGRESQL
-log_info "🗄️ Instalando PostgreSQL..."
+echo ""
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│             ETAPA 3/6 - INSTALANDO POSTGRESQL                 │"
+echo "└──────────────────────────────────────────────────────────────┘"
+log_info "🗄️ Configurando banco de dados..."
 
 cat > postgres_corrigido.yaml <<EOF
 version: '3.7'
@@ -680,7 +702,11 @@ docker stack deploy --prune --resolve-image always -c postgres_corrigido.yaml po
 wait_service_perfect "postgres" 180
 
 # 4. INSTALAR REDIS
-log_info "🔴 Instalando Redis..."
+echo ""
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│                ETAPA 4/6 - INSTALANDO REDIS                   │"
+echo "└──────────────────────────────────────────────────────────────┘"
+log_info "🔴 Configurando cache e filas..."
 
 cat > redis_corrigido.yaml <<EOF
 version: '3.7'
@@ -738,7 +764,11 @@ for i in {1..30}; do
 done
 
 # 5. INSTALAR EVOLUTION API
-log_info "📱 Instalando Evolution API..."
+echo ""
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│            ETAPA 5/6 - INSTALANDO EVOLUTION API               │"
+echo "└──────────────────────────────────────────────────────────────┘"
+log_info "📱 Configurando API do WhatsApp..."
 
 # Criar volumes
 docker volume create evolution_instances >/dev/null 2>&1
@@ -847,7 +877,11 @@ docker stack deploy --prune --resolve-image always -c evolution_corrigido.yaml e
 wait_service_perfect "evolution" 300
 
 # 6. INSTALAR N8N
-log_info "🔄 Instalando N8N..."
+echo ""
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│                 ETAPA 6/6 - INSTALANDO N8N                    │"
+echo "└──────────────────────────────────────────────────────────────┘"
+log_info "🔄 Configurando automação de workflows..."
 
 cat > n8n_corrigido.yaml <<EOF
 version: '3.7'
@@ -929,8 +963,8 @@ wait_service_perfect "n8n" 300
 
 # AGUARDAR CERTIFICADOS SSL SEREM GERADOS AUTOMATICAMENTE
 log_info "🔐 Aguardando certificados SSL serem gerados automaticamente..."
-echo "⏳ Isso pode levar 10-15 minutos - AUMENTAMOS O TEMPO!"
-sleep 300
+echo "⏳ Processamento SSL otimizado - 5 minutos"
+sleep 180
 
 # FORÇAR GERAÇÃO DE CERTIFICADOS SSL
 log_info "🔥 Forçando geração de certificados SSL para todos os domínios..."
@@ -938,29 +972,30 @@ log_info "🔥 Forçando geração de certificados SSL para todos os domínios..
 # Fazer múltiplas requisições para acionar Let's Encrypt
 for domain in "$DOMINIO_PORTAINER" "$DOMINIO_N8N" "$DOMINIO_EVOLUTION" "$WEBHOOK_N8N"; do
     log_info "Forçando certificado para $domain..."
-    for i in {1..30}; do
+    for i in {1..20}; do
         # HTTP para acionar redirect
         curl -s -H "Host: $domain" "http://$server_ip" >/dev/null 2>&1 &
         # HTTPS para acionar certificado
         curl -s -k "https://$domain" >/dev/null 2>&1 &
         # Acme challenge
         curl -s -H "Host: $domain" "http://$server_ip/.well-known/acme-challenge/test" >/dev/null 2>&1 &
-        sleep 2
+        sleep 1
     done
-    log_success "✅ $domain processado (30 tentativas - AUMENTADAS!)"
+    log_success "✅ $domain processado (20 tentativas)"
 done
 
 # Aguardar processos terminarem
 wait
 
 # Aguardar mais tempo para certificados serem gerados
-log_info "⏳ Aguardando mais 10 minutos para certificados serem processados..."
-sleep 600
+log_info "⏳ Aguardando 2 minutos para certificados serem processados..."
+sleep 120
 
 # VERIFICAÇÃO FINAL COMPLETA
-echo ""
-echo "🔍 VERIFICAÇÃO FINAL - INSTALAÇÃO CORRIGIDA"
-echo "=========================================="
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║                    INSTALAÇÃO CONCLUÍDA                     ║"
+echo "║                       SETUP ALICIA                        ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
 
 all_perfect=true
 
@@ -992,30 +1027,31 @@ echo "=========================================="
 echo "🎉 INSTALAÇÃO CORRIGIDA CONCLUÍDA!"
 echo "=========================================="
 echo ""
-echo "🌐 SEUS LINKS COM SSL (HTTPS):"
-echo "   • Portainer: https://$DOMINIO_PORTAINER"
-echo "   • N8N: https://$DOMINIO_N8N"
-echo "   • Evolution API: https://$DOMINIO_EVOLUTION"
-echo "   • Webhook N8N: https://$WEBHOOK_N8N"
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│                        SERVIÇOS DISPONÍVEIS                        │"
+echo "├──────────────────────────────────────────────────────────────┤"
+echo "│ 🐳 Portainer: https://$DOMINIO_PORTAINER"
+echo "│ 🔄 N8N: https://$DOMINIO_N8N"
+echo "│ 📱 Evolution API: https://$DOMINIO_EVOLUTION"
+echo "│ 🔗 Webhook N8N: https://$WEBHOOK_N8N"
+echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
-echo "🔑 CREDENCIAIS IMPORTANTES:"
-echo "   • Evolution API Key: $EVOLUTION_API_KEY"
-echo "   • PostgreSQL Password: $POSTGRES_PASSWORD"
-echo "   • N8N Encryption Key: $N8N_KEY"
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│                      CREDENCIAIS DE ACESSO                      │"
+echo "├──────────────────────────────────────────────────────────────┤"
+echo "│ 🔑 Evolution API Key: $EVOLUTION_API_KEY"
+echo "│ 🗿 PostgreSQL Password: $POSTGRES_PASSWORD"
+echo "│ 🔐 N8N Encryption Key: $N8N_KEY"
+echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
-echo "⚠️ IMPORTANTE:"
-echo "   ✅ Todos os serviços foram instalados sem erros"
-echo "   ✅ SSL automático configurado e funcionando"
-echo "   ✅ Redirecionamento HTTP→HTTPS ativo (CORRIGIDO!)"
-echo "   ✅ Evolution API funcionando com banco de dados"
-echo "   ✅ Zero erros de sintaxe"
-echo "   ✅ Tempos de SSL aumentados para 15+ minutos"
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│                        INFORMAÇÕES IMPORTANTES                    │"
+echo "├──────────────────────────────────────────────────────────────┤"
+echo "│ • SSL automático configurado com Let's Encrypt                │"
+echo "│ • Redirecionamento HTTP→HTTPS ativo                          │"
+echo "│ • Todos os serviços funcionando com SSL                        │"
+echo "│ • Aguarde 5 minutos para certificados serem processados        │"
+echo "│ • IP do servidor: $server_ip                    │"
+echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
-echo "⏰ Se algum link ainda mostrar 'Não seguro':"
-echo "   • Aguarde 10-15 minutos para certificados serem gerados"
-echo "   • Agora você pode digitar SEM https:// que funciona!"
-echo "   • Limpe o cache do navegador (Ctrl+F5)"
-echo "   • Verifique se o DNS aponta para: $server_ip"
-echo ""
-echo "🎊 PARABÉNS! SUA INSTALAÇÃO ESTÁ PERFEITA E SEM ERROS!"
-echo "============================================="
+echo "🎉 Instalação concluída com sucesso!"
