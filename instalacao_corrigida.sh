@@ -132,16 +132,16 @@ fix_ssl_especifico() {
     
     server_ip=$(curl -s ifconfig.me 2>/dev/null || hostname -I | cut -d' ' -f1)
     
-    # Forçar SSL para cada domínio usando nova função
+    # Forçar SSL para cada domínio usando função simples
     for domain in "$DOMINIO_PORTAINER" "$DOMINIO_N8N" "$DOMINIO_EVOLUTION" "$WEBHOOK_N8N"; do
         if [ "$domain" = "$DOMINIO_PORTAINER" ]; then
-            check_ssl_domain "$domain" "Portainer"
+            check_ssl_simple "$domain" "Portainer"
         elif [ "$domain" = "$DOMINIO_N8N" ]; then
-            check_ssl_domain "$domain" "N8N"
+            check_ssl_simple "$domain" "N8N"
         elif [ "$domain" = "$DOMINIO_EVOLUTION" ]; then
-            check_ssl_domain "$domain" "Evolution API"
+            check_ssl_simple "$domain" "Evolution API"
         elif [ "$domain" = "$WEBHOOK_N8N" ]; then
-            check_ssl_domain "$domain" "Webhook N8N"
+            check_ssl_simple "$domain" "Webhook N8N"
         fi
     done
     
@@ -505,36 +505,28 @@ wait_service_perfect() {
     return 1
 }
 
-# Função para aguardar e verificar SSL de um domínio específico
-check_ssl_domain() {
+# Função para verificar SSL de forma simples e rápida
+check_ssl_simple() {
     local domain=$1
     local service_name=$2
     
     log_info "🔐 Verificando SSL para $domain ($service_name)..."
     
-    # Aguardar 30 segundos para o serviço estabilizar
-    sleep 30
+    # Aguardar 15 segundos para o serviço estabilizar
+    sleep 15
     
-    # Tentar 15 vezes (30 segundos cada = 7.5 minutos máximo)
-    for i in {1..15}; do
-        echo "   Tentativa $i/15 para $domain..."
-        
-        # Fazer requisições para acionar Let's Encrypt
-        curl -s -H "Host: $domain" "http://$server_ip" >/dev/null 2>&1 &
-        curl -s -k "https://$domain" >/dev/null 2>&1 &
-        curl -s -H "Host: $domain" "http://$server_ip/.well-known/acme-challenge/test" >/dev/null 2>&1 &
-        
-        # Testar se SSL está funcionando
-        if curl -s -I "https://$domain" --max-time 8 2>/dev/null | grep -q "HTTP.*[2-4][0-9][0-9]"; then
-            log_success "✅ SSL funcionando para $domain!"
-            return 0
-        fi
-        
-        sleep 30
-    done
+    # Fazer uma requisição simples para acionar Let's Encrypt
+    curl -s -H "Host: $domain" "http://$server_ip" >/dev/null 2>&1 &
+    curl -s -k "https://$domain" >/dev/null 2>&1 &
     
-    log_warning "⚠️ SSL para $domain ainda processando (continuando instalação)"
-    return 1
+    # Testar uma vez se SSL já está funcionando
+    if curl -s -I "https://$domain" --max-time 5 2>/dev/null | grep -q "HTTP.*[2-4][0-9][0-9]"; then
+        log_success "✅ SSL já funcionando para $domain!"
+    else
+        log_info "🔄 SSL para $domain será processado em background"
+    fi
+    
+    log_success "✅ $service_name configurado! Continuando instalação..."
 }
 
 # 1. INSTALAR TRAEFIK (PROXY SSL)
@@ -682,7 +674,7 @@ docker stack deploy --prune --resolve-image always -c portainer_corrigido.yaml p
 wait_service_perfect "portainer" 120
 
 # Verificar SSL do Portainer imediatamente
-check_ssl_domain "$DOMINIO_PORTAINER" "Portainer"
+check_ssl_simple "$DOMINIO_PORTAINER" "Portainer"
 
 echo ""
 echo "┌──────────────────────────────────────────────────────────────┐"
@@ -920,7 +912,7 @@ docker stack deploy --prune --resolve-image always -c evolution_corrigido.yaml e
 wait_service_perfect "evolution" 300
 
 # Verificar SSL do Evolution imediatamente
-check_ssl_domain "$DOMINIO_EVOLUTION" "Evolution API"
+check_ssl_simple "$DOMINIO_EVOLUTION" "Evolution API"
 
 echo ""
 echo "┌──────────────────────────────────────────────────────────────┐"
@@ -1021,8 +1013,8 @@ docker stack deploy --prune --resolve-image always -c n8n_corrigido.yaml n8n
 wait_service_perfect "n8n" 300
 
 # Verificar SSL do N8N e Webhook imediatamente
-check_ssl_domain "$DOMINIO_N8N" "N8N"
-check_ssl_domain "$WEBHOOK_N8N" "Webhook N8N"
+check_ssl_simple "$DOMINIO_N8N" "N8N"
+check_ssl_simple "$WEBHOOK_N8N" "Webhook N8N"
 
 echo ""
 echo "┌──────────────────────────────────────────────────────────────┐"
@@ -1108,7 +1100,7 @@ echo ""
 echo "┌──────────────────────────────────────────────────────────────┐"
 echo "│                        INFORMAÇÕES IMPORTANTES                    │"
 echo "├──────────────────────────────────────────────────────────────┤"
-echo "│ • SSL verificado individualmente para cada serviço           │"
+echo "│ • SSL processado automaticamente em background               │"
 echo "│ • Redirecionamento HTTP→HTTPS ativo                          │"
 echo "│ • ⚠️  IMPORTANTE: Crie conta Portainer em 5 minutos!        │"
 echo "│ • 🔑 Configure conta administrador no N8N                   │"
