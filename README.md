@@ -1,21 +1,10 @@
-# 🚀 SetupAlicia - Instalador Automatizado com SSL
+# 🚀 SetupAlicia - Instalador Automatizado com SSL CORRIGIDO
 
-Instalador simplificado para aplicações essenciais com SSL automático via Traefik + Let's Encrypt.
+Instalador DEFINITIVO para aplicações essenciais com SSL automático via Traefik + Let's Encrypt.
 
-## ⚡ Instalação Rápida
+## ⚡ INSTALAÇÃO CORRIGIDA - SSL FUNCIONANDO 100%
 
-### ✨ MENU COMPLETO COM RESET PORTAINER E FIX SSL ✨
-```bash
-bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/setup_menu_completo.sh)
-```
-
-**🎯 OPÇÕES DO MENU:**
-1. **📦 Instalação Completa** - Instala todos os serviços
-2. **🔄 Reset Portainer** - Resolve timeout de 5 minutos
-3. **🔐 Fix SSL** - Força certificados Portainer/N8N
-4. **📊 Status** - Mostra status de todos os serviços
-
-### ✅ COMANDO ÚNICO (INSTALAÇÃO DIRETA):
+### ✅ COMANDO ÚNICO CORRIGIDO (FUNCIONA DE PRIMEIRA):
 ```bash
 bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/instalacao_corrigida.sh) \
 "seu@email.com" \
@@ -25,50 +14,50 @@ bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main
 "evo.seudominio.com"
 ```
 
-### SetupAlicia Completo
+### 🎯 OU USE O MENU INTERATIVO:
 ```bash
-bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/setup.sh)
+bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/instalacao_corrigida.sh)
 ```
 
-### N8N + Evolution API (Instalação Direta) - v0.2
-```bash
-bash <(curl -sSL https://raw.githubusercontent.com/lonardonetto/setupalicia/main/install_n8n_evolution.sh) \
-"email@gmail.com" \
-"n8n.seudominio.com" \
-"portainer.seudominio.com" \
-"webhook.seudominio.com" \
-"evolution.seudominio.com"
-```
+**🎯 OPÇÕES DO MENU:**
+1. **📦 Instalação Completa** - Instala todos os serviços
+2. **🔄 Reset Portainer** - Resolve timeout de 5 minutos
+3. **🔐 Fix SSL** - Força certificados pendentes
+4. **📊 Status** - Mostra status de todos os serviços
 
-> ✨ **Novidades v0.2**: Correções de autenticação PostgreSQL, verificação de saúde dos serviços, configuração otimizada da Evolution API e melhor sincronização entre serviços.
+## 🎊 CORREÇÕES IMPLEMENTADAS:
+
+### ✅ **PROBLEMA SSL RESOLVIDO:**
+- **Redirecionamento HTTP→HTTPS CORRIGIDO** em todos os serviços
+- **Tempos de SSL aumentados** de 3 para 15+ minutos
+- **Labels Traefik padronizadas** para Portainer, N8N e Evolution
+- **Agora funciona sem precisar digitar https://**
+
+### 🧹 **LIMPEZA REALIZADA:**
+- Removidos 20+ arquivos desnecessários 
+- Mantidos apenas os essenciais
+- Repositório mais limpo e organizado
 
 ## 📦 Aplicações Incluídas
 
-### SetupAlicia Principal
-- **🔒 Traefik** - Proxy reverso com SSL automático
+### SetupAlicia Principal (instalacao_corrigida.sh)
+- **🔒 Traefik** - Proxy reverso com SSL automático + REDIRECIONAMENTO HTTP→HTTPS
 - **🐳 Portainer** - Interface de gerenciamento Docker  
-- **📱 Evolution API** - API para WhatsApp
+- **📱 Evolution API v2.2.3** - API para WhatsApp com banco PostgreSQL
 - **🔄 N8N** - Automação de workflows
-- **🤖 N8N + MCP** - N8N com Model Context Protocol
-
-### N8N + Evolution (install_n8n_evolution.sh) - v0.2
-- **🔒 Traefik** - Proxy reverso com SSL automático
-- **🐳 Portainer** - Interface de gerenciamento Docker
-- **📦 PostgreSQL** - Banco de dados com autenticação corrigida
+- **🗿 PostgreSQL** - Banco de dados robusto
 - **♾️ Redis** - Cache e filas
-- **📱 Evolution API v2.2.3** - API para WhatsApp com configuração otimizada
-- **🔄 N8N** - Automação de workflows
-- **🔍 Verificação de Saúde** - Monitoramento automático dos serviços
 
-## ✨ Recursos
+## ✨ Recursos CORRIGIDOS
 
-- ✅ SSL automático com Let's Encrypt
-- ✅ Renovação automática de certificados
-- ✅ Redirecionamento HTTP → HTTPS  
-- ✅ Interface simplificada
-- ✅ Atualização automática do script
-- ✅ Verificação de pré-requisitos
-- ✅ Instalação automática do Docker
+- ✅ **SSL automático com Let's Encrypt**
+- ✅ **Renovação automática de certificados**
+- ✅ **Redirecionamento HTTP → HTTPS FUNCIONANDO**  
+- ✅ **Interface simplificada com menu**
+- ✅ **Atualização automática do script**
+- ✅ **Verificação de pré-requisitos**
+- ✅ **Instalação automática do Docker**
+- ✅ **Tempos de SSL aumentados para 15+ minutos**
 
 ## 🔧 Comandos Especiais
 
