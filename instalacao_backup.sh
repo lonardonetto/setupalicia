@@ -1055,7 +1055,7 @@ docker stack deploy --prune --resolve-image always -c portainer_corrigido.yaml p
 save_yaml_for_editing "portainer" "portainer_corrigido.yaml"
 wait_service_perfect "portainer" 120
 
-# ===== INÍCIO FASE 1 COMPLETA =====
+# FASE 1 COMPLETA - TRAEFIK E PORTAINER INSTALADOS
 log_success "✅ FASE 1 CONCLUÍDA - Traefik e Portainer instalados!"
 
 # Aguardar SSL estar 100% funcional antes de configurar
@@ -1097,14 +1097,14 @@ for restart_check in {1..30}; do
     sleep 5
 done
 
-# ===== INÍCIO FASE 2 - CONFIGURAÇÃO =====
+# AGORA CONFIGURAR CONTA E API KEY
 log_info "🎯 INICIANDO FASE 2 - Configuração da conta e API Key..."
 
 # Configurar Portainer automaticamente DEPOIS de tudo estabilizado
 if setup_portainer_auto; then
     log_success "✅ Portainer configurado automaticamente!"
 else
-    log_warning "⚠️ Configuração manual necessária"
+    log_info "🔑 Configuração manual necessária"
 fi
 
 # Verificar SSL do Portainer imediatamente
