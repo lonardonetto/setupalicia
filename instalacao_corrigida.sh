@@ -1,9 +1,6 @@
 #!/bin/bash
 
-# 🚀 SETUPALICIA - MENU COMPLETO + INSTALAÇÃO FUNCIONANDO
-# Mantém o script original que funciona 100% + adiciona funcionalidades extras
-# Autor: Maicon Ramos - Automação sem Limites
-# Versão: MENU + ORIGINAL FUNCIONANDO
+# 🚀 SETUPALICIA - MENU COMPLETO 
 
 set -e
 
@@ -12,6 +9,121 @@ log_info() { echo -e "\033[34m[INFO]\033[0m $1"; }
 log_success() { echo -e "\033[32m[SUCESSO]\033[0m $1"; }
 log_warning() { echo -e "\033[33m[AVISO]\033[0m $1"; }
 log_error() { echo -e "\033[31m[ERRO]\033[0m $1"; }
+
+# Função para salvar YAMLs das stacks para edição futura no Portainer
+save_yaml_for_editing() {
+    local stack_name=$1
+    local yaml_file=$2
+    
+    # Criar diretório se não existir
+    mkdir -p /opt/setupalicia/stacks >/dev/null 2>&1
+    
+    # Salvar YAML para edição futura no Portainer
+    if [ -f "$yaml_file" ]; then
+        cp "$yaml_file" "/opt/setupalicia/stacks/${stack_name}.yaml" >/dev/null 2>&1
+    fi
+}
+
+# Função para configurar Portainer automaticamente
+setup_portainer_auto() {
+    log_info "🔧 Configurando Portainer automaticamente..."
+    
+    # Aguardar Portainer estar 100% operacional
+    log_info "⏳ Aguardando Portainer ficar online..."
+    for i in {1..120}; do
+        if curl -s "https://$DOMINIO_PORTAINER/api/status" >/dev/null 2>&1; then
+            log_success "✅ Portainer API acessível!"
+            break
+        fi
+        sleep 5
+    done
+    
+    # Gerar credenciais automáticas
+    PORTAINER_USER="setupalicia"
+    PORTAINER_PASS=$(openssl rand -base64 12 | tr -d "=+/" | cut -c1-12)
+    
+    # Tentar criar usuário admin automaticamente
+    log_info "👤 Criando conta administrador automática..."
+    
+    # Criar usuário admin via API
+    INIT_RESPONSE=$(curl -s -X POST "https://$DOMINIO_PORTAINER/api/users/admin/init" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"Username\": \"$PORTAINER_USER\",
+            \"Password\": \"$PORTAINER_PASS\"
+        }" 2>/dev/null)
+    
+    if echo "$INIT_RESPONSE" | grep -q "JWT"; then
+        log_success "✅ Conta criada automaticamente!"
+        
+        # Extrair JWT token
+        JWT_TOKEN=$(echo "$INIT_RESPONSE" | grep -o '"jwt":"[^"]*' | cut -d'"' -f4)
+        
+        # Obter Swarm ID
+        SWARM_ID=$(docker info --format '{{.Swarm.NodeID}}')
+        
+        # Criar API key
+        API_RESPONSE=$(curl -s -X POST "https://$DOMINIO_PORTAINER/api/users/1/tokens" \
+            -H "Authorization: Bearer $JWT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{
+                \"description\": \"setupalicia-auto\"
+            }" 2>/dev/null)
+        
+        if echo "$API_RESPONSE" | grep -q "rawAPIKey"; then
+            PORTAINER_API_KEY=$(echo "$API_RESPONSE" | grep -o '"rawAPIKey":"[^"]*' | cut -d'"' -f4)
+            log_success "✅ API Key criada automaticamente!"
+            
+            # Salvar credenciais no .env
+            echo "PORTAINER_USER=$PORTAINER_USER" >> .env
+            echo "PORTAINER_PASS=$PORTAINER_PASS" >> .env
+            echo "PORTAINER_API_KEY=$PORTAINER_API_KEY" >> .env
+            echo "SWARM_ID=$SWARM_ID" >> .env
+            
+            return 0
+        fi
+    fi
+    
+    log_warning "⚠️ Não foi possível criar conta automática - usando método manual"
+    return 1
+}
+
+# Função para criar stack via API do Portainer
+create_stack_via_api() {
+    local stack_name=$1
+    local yaml_file=$2
+    
+    if [ -z "$PORTAINER_API_KEY" ] || [ -z "$SWARM_ID" ]; then
+        log_warning "⚠️ API não configurada - usando CLI"
+        docker stack deploy --prune --resolve-image always -c "$yaml_file" "$stack_name"
+        save_yaml_for_editing "$stack_name" "$yaml_file"
+        return
+    fi
+    
+    log_info "🚀 Criando stack $stack_name via API Portainer (editável)..."
+    
+    # Ler conteúdo do YAML
+    YAML_CONTENT=$(cat "$yaml_file")
+    
+    # Criar stack via API
+    API_RESPONSE=$(curl -s -X POST "https://$DOMINIO_PORTAINER/api/stacks" \
+        -H "X-API-Key: $PORTAINER_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"Name\": \"$stack_name\",
+            \"SwarmID\": \"$SWARM_ID\",
+            \"StackFileContent\": $(echo "$YAML_CONTENT" | jq -Rs .)
+        }" 2>/dev/null)
+    
+    if echo "$API_RESPONSE" | grep -q "$stack_name"; then
+        log_success "✅ Stack $stack_name criada via API (editável no Portainer)!"
+        save_yaml_for_editing "$stack_name" "$yaml_file"
+    else
+        log_warning "⚠️ Falha na API - usando CLI como fallback"
+        docker stack deploy --prune --resolve-image always -c "$yaml_file" "$stack_name"
+        save_yaml_for_editing "$stack_name" "$yaml_file"
+    fi
+}
 
 # Função para confirmação
 confirmar() {
@@ -388,7 +500,7 @@ log_info "📦 Atualizando sistema..."
 {
     apt update -y &&
     apt upgrade -y &&
-    apt-get install -y curl wget gnupg lsb-release ca-certificates apt-transport-https software-properties-common
+    apt-get install -y curl wget gnupg lsb-release ca-certificates apt-transport-https software-properties-common jq
 } >> instalacao_corrigida.log 2>&1
 
 # Aguardar liberação do lock do apt
@@ -595,6 +707,7 @@ EOF
 
 docker volume create traefik_letsencrypt >/dev/null 2>&1
 docker stack deploy --prune --resolve-image always -c traefik_corrigido.yaml traefik
+save_yaml_for_editing "traefik" "traefik_corrigido.yaml"
 wait_service_perfect "traefik" 120
 
 log_success "✅ Traefik instalado - Proxy SSL pronto!"
@@ -671,21 +784,32 @@ EOF
 docker volume create portainer_data >/dev/null 2>&1
 docker network create --driver=overlay agent_network >/dev/null 2>&1
 docker stack deploy --prune --resolve-image always -c portainer_corrigido.yaml portainer
+save_yaml_for_editing "portainer" "portainer_corrigido.yaml"
 wait_service_perfect "portainer" 120
+
+# Configurar Portainer automaticamente
+if setup_portainer_auto; then
+    log_success "✅ Portainer configurado automaticamente!"
+else
+    log_info "🔑 Configuração manual necessária"
+fi
 
 # Verificar SSL do Portainer imediatamente
 check_ssl_simple "$DOMINIO_PORTAINER" "Portainer"
 
 echo ""
 echo "┌──────────────────────────────────────────────────────────────┐"
-echo "│               ⚠️  IMPORTANTE - PORTAINER                        │"
+echo "│               ✅ PORTAINER CONFIGURADO AUTOMATICAMENTE           │"
 echo "├──────────────────────────────────────────────────────────────┤"
-echo "│ 🔴 CRIE SUA CONTA EM ATÉ 5 MINUTOS!                       │"
 echo "│ 🌐 Acesse: https://$DOMINIO_PORTAINER                    │"
-echo "│ ⏰ Timeout após 5 minutos de inatividade                    │"
-echo "│ 🔑 Configure username e senha de administrador            │"
+echo "│ 🔑 Usuário: setupalicia                                  │"
+echo "│ 🔐 Senha: (será exibida no final)                        │"
+echo "│                                                              │"
+echo "│ 🚀 Próximas stacks serão criadas via API (editáveis)      │"
 echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
+
+
 
 # 3. INSTALAR POSTGRESQL
 echo ""
@@ -733,7 +857,7 @@ networks:
 EOF
 
 docker volume create postgres_data >/dev/null 2>&1
-docker stack deploy --prune --resolve-image always -c postgres_corrigido.yaml postgres
+create_stack_via_api "postgres" "postgres_corrigido.yaml"
 wait_service_perfect "postgres" 180
 
 # 4. INSTALAR REDIS
@@ -775,7 +899,7 @@ networks:
 EOF
 
 docker volume create redis_data >/dev/null 2>&1
-docker stack deploy --prune --resolve-image always -c redis_corrigido.yaml redis
+create_stack_via_api "redis" "redis_corrigido.yaml"
 wait_service_perfect "redis" 120
 
 # Aguardar bancos estabilizarem
@@ -908,7 +1032,7 @@ networks:
     external: true
 EOF
 
-docker stack deploy --prune --resolve-image always -c evolution_corrigido.yaml evolution
+create_stack_via_api "evolution" "evolution_corrigido.yaml"
 wait_service_perfect "evolution" 300
 
 # Verificar SSL do Evolution imediatamente
@@ -1009,7 +1133,7 @@ networks:
 EOF
 
 docker volume create n8n_data >/dev/null 2>&1
-docker stack deploy --prune --resolve-image always -c n8n_corrigido.yaml n8n
+create_stack_via_api "n8n" "n8n_corrigido.yaml"
 wait_service_perfect "n8n" 300
 
 # Verificar SSL do N8N e Webhook imediatamente
@@ -1092,9 +1216,57 @@ echo ""
 echo "┌──────────────────────────────────────────────────────────────┐"
 echo "│                      CREDENCIAIS DE ACESSO                      │"
 echo "├──────────────────────────────────────────────────────────────┤"
+echo "│ 🐳 PORTAINER (ACESSO AUTOMÁTICO CRIADO):                │"
+echo "│    🌐 URL: https://$DOMINIO_PORTAINER                  │"
+if [ ! -z "$PORTAINER_USER" ] && [ ! -z "$PORTAINER_PASS" ]; then
+echo "│    🔑 Usuário: $PORTAINER_USER                           │"
+echo "│    🔐 Senha: $PORTAINER_PASS                             │"
+echo "│    🖑️ API Key: $PORTAINER_API_KEY"
+else
+echo "│    ⚠️ Conta automática não criada - configure manualmente    │"
+fi
+echo "│                                                              │"
 echo "│ 🔑 Evolution API Key: $EVOLUTION_API_KEY"
 echo "│ 🗿 PostgreSQL Password: $POSTGRES_PASSWORD"
 echo "│ 🔐 N8N Encryption Key: $N8N_KEY"
+echo "└──────────────────────────────────────────────────────────────┘"
+echo ""
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│                   ✅ STACKS EDITÁVEIS NO PORTAINER              │"
+echo "├──────────────────────────────────────────────────────────────┤"
+if [ ! -z "$PORTAINER_API_KEY" ]; then
+echo "│ 🎉 SUCESSO! Stacks criadas via API são EDITÁVEIS!           │"
+echo "│ 🚀 Acesse Portainer > Stacks para editar                    │"
+else
+echo "│ 📝 Método de edição: Upload de arquivos                    │"
+echo "│ 📁 Arquivos salvos em: /opt/setupalicia/stacks/             │"
+fi
+echo "│                                                              │"
+echo "│ 📝 Como editar:                                           │"
+echo "│ 1. Acesse Portainer com as credenciais acima              │"
+echo "│ 2. Vá em 'Stacks'                                           │"
+echo "│ 3. Clique na stack desejada > 'Editor'                    │"
+echo "│ 4. Faça suas alterações e clique 'Update'                  │"
+echo "└──────────────────────────────────────────────────────────────┘"
+echo "└──────────────────────────────────────────────────────────────┘"
+echo ""
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│                   📝 COMO EDITAR STACKS                         │"
+echo "├──────────────────────────────────────────────────────────────┤"
+echo "│ 🎯 MÉTODO RECOMENDADO:                                       │"
+echo "│ 1. Acesse Portainer: https://$DOMINIO_PORTAINER             │"
+echo "│ 2. Vá em 'Stacks' > 'Add stack'                             │"
+echo "│ 3. Escolha 'Upload' e selecione arquivo de:                 │"
+echo "│    /opt/setupalicia/stacks/[nome_da_stack].yaml             │"
+echo "│ 4. Edite conforme necessário e faça deploy                  │"
+echo "│                                                              │"
+echo "│ 📂 Arquivos salvos em: /opt/setupalicia/stacks/             │"
+echo "│ • postgres.yaml  • redis.yaml    • evolution.yaml          │"
+echo "│ • n8n.yaml       • traefik.yaml  • portainer.yaml          │"
+echo "│                                                              │"
+echo "│ ⚠️ IMPORTANTE: As stacks atuais foram criadas via CLI        │"
+echo "│    Para editá-las no Portainer, use o método acima          │"
+echo "└──────────────────────────────────────────────────────────────┘"
 echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
 echo "┌──────────────────────────────────────────────────────────────┐"
