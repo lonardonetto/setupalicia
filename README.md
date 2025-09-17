@@ -1,28 +1,5 @@
 # 🚀 SetupAlicia - Instalador Automatizado com SSL CORRIGIDO
 
-## 🎆 NOVIDADE: Portainer Totalmente Automatizado + Stacks Editáveis
-
-### ✅ **CONFIGURAÇÃO AUTOMÁTICA DO PORTAINER:**
-- **👤 Conta criada automaticamente**: `setupalicia` + senha gerada
-- **🔑 API Key criada automaticamente** para stacks editáveis
-- **📝 Credenciais exibidas no final** da instalação
-- **⏱️ Zero timeout** - não precisa configurar em 5 minutos
-
-### 🚀 **STACKS EDITÁVEIS AUTOMATICAMENTE:**
-- **Antes**: Stacks via CLI = não editáveis
-- **Agora**: Stacks via API = **TOTALMENTE EDITÁVEIS** no Portainer
-- **Método**: Click na stack > Editor > Alterar > Update
-- **Fallback**: Se API falhar, usa CLI + backup dos YAMLs
-
-### 📁 **Stacks Automaticamente Editáveis:**
-- `postgres` - Banco de dados ✅
-- `redis` - Cache ✅
-- `evolution` - WhatsApp API ✅
-- `n8n` - Automação ✅
-- `traefik` + `portainer` - Via CLI (bootstrap necessário)
-
----
-
 Instalador DEFINITIVO para aplicações essenciais com SSL automático via Traefik + Let's Encrypt.
 
 ## ⚡ INSTALAÇÃO CORRIGIDA - SSL FUNCIONANDO 100%
