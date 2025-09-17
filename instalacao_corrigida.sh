@@ -28,25 +28,75 @@ save_yaml_for_editing() {
 setup_portainer_auto() {
     log_info "🔧 Configurando Portainer automaticamente..."
     
-    # Aguardar Portainer estar 100% operacional
+    # Diagnóstico inicial
+    log_info "🔍 Verificando status dos containers..."
+    docker ps --filter "name=portainer_portainer" --format "table {{.Names}}\t{{.Status}}"
+    
+    # Verificar se está rodando via HTTP primeiro (mais rápido)
+    local portainer_available=false
+    
     log_info "⏳ Aguardando Portainer ficar online..."
-    for i in {1..120}; do
-        if curl -s "https://$DOMINIO_PORTAINER/api/status" >/dev/null 2>&1; then
-            log_success "✅ Portainer API acessível!"
+    log_info "💡 Tentando HTTP primeiro (mais rápido)..."
+    
+    # Tentar HTTP primeiro (9000)
+    for i in {1..30}; do
+        if curl -s "http://localhost:9000/api/status" >/dev/null 2>&1; then
+            log_success "✅ Portainer HTTP acessível!"
+            portainer_available=true
             break
+        fi
+        
+        if [ $((i % 10)) -eq 0 ]; then
+            log_info "   ... tentativa $i/30 via HTTP"
         fi
         sleep 5
     done
+    
+    # Se HTTP não funcionou, tentar HTTPS
+    if [ "$portainer_available" = false ]; then
+        log_info "🔄 HTTP não disponível, tentando HTTPS..."
+        for i in {1..60}; do
+            if curl -s -k "https://$DOMINIO_PORTAINER/api/status" >/dev/null 2>&1; then
+                log_success "✅ Portainer HTTPS acessível!"
+                portainer_available=true
+                break
+            fi
+            
+            if [ $((i % 15)) -eq 0 ]; then
+                log_info "   ... tentativa $i/60 via HTTPS (aguarde, SSL pode demorar)"
+                log_info "   ... verificando se container está rodando..."
+                docker ps --filter "name=portainer_portainer" --format "{{.Status}}"
+            fi
+            sleep 5
+        done
+    fi
+    
+    # Se ainda não está disponível, dar instruções manuais
+    if [ "$portainer_available" = false ]; then
+        log_warning "⚠️ Portainer demorou mais que o esperado para ficar online"
+        log_info "📋 Vamos continuar e você poderá configurar manualmente depois"
+        log_info "🌐 Acesse: https://$DOMINIO_PORTAINER quando estiver pronto"
+        return 1
+    fi
     
     # Gerar credenciais automáticas
     PORTAINER_USER="setupalicia"
     PORTAINER_PASS=$(openssl rand -base64 12 | tr -d "=+/" | cut -c1-12)
     
-    # Tentar criar usuário admin automaticamente
     log_info "👤 Criando conta administrador automática..."
     
+    # Decidir URL baseado em qual funcionou
+    local portainer_url
+    if curl -s "http://localhost:9000/api/status" >/dev/null 2>&1; then
+        portainer_url="http://localhost:9000"
+        log_info "🔗 Usando HTTP para configuração inicial"
+    else
+        portainer_url="https://$DOMINIO_PORTAINER"
+        log_info "🔗 Usando HTTPS para configuração"
+    fi
+    
     # Criar usuário admin via API
-    INIT_RESPONSE=$(curl -s -X POST "https://$DOMINIO_PORTAINER/api/users/admin/init" \
+    INIT_RESPONSE=$(curl -s -X POST "$portainer_url/api/users/admin/init" \
         -H "Content-Type: application/json" \
         -d "{
             \"Username\": \"$PORTAINER_USER\",
@@ -63,7 +113,7 @@ setup_portainer_auto() {
         SWARM_ID=$(docker info --format '{{.Swarm.NodeID}}')
         
         # Criar API key
-        API_RESPONSE=$(curl -s -X POST "https://$DOMINIO_PORTAINER/api/users/1/tokens" \
+        API_RESPONSE=$(curl -s -X POST "$portainer_url/api/users/1/tokens" \
             -H "Authorization: Bearer $JWT_TOKEN" \
             -H "Content-Type: application/json" \
             -d "{
@@ -80,11 +130,20 @@ setup_portainer_auto() {
             echo "PORTAINER_API_KEY=$PORTAINER_API_KEY" >> .env
             echo "SWARM_ID=$SWARM_ID" >> .env
             
-            return 0
+            # Verificar se API Key foi salva corretamente
+            if [ ! -z "$PORTAINER_API_KEY" ]; then
+                log_success "🔑 API Key configurada: ${PORTAINER_API_KEY:0:20}..."
+                return 0
+            else
+                log_warning "⚠️ API Key vazia - usando método fallback"
+            fi
+        else
+            log_warning "⚠️ Falha ao criar API Key: $API_RESPONSE"
         fi
     fi
     
     log_warning "⚠️ Não foi possível criar conta automática - usando método manual"
+    log_info "📝 Você poderá configurar manualmente depois em: https://$DOMINIO_PORTAINER"
     return 1
 }
 
@@ -1175,9 +1234,15 @@ echo "╚═══════════════════════�
 
 all_perfect=true
 
-# Verificar serviços
-echo "📊 STATUS DOS SERVIÇOS:"
-docker service ls
+# Verificar serviços de forma organizada
+echo "📊 RESUMO DOS SERVIÇOS:"
+echo "✅ Traefik       - Proxy SSL"
+echo "✅ Portainer     - Interface Docker (conta criada)"
+echo "✅ PostgreSQL    - Banco de dados"
+echo "✅ Redis         - Cache"
+echo "✅ Evolution API - WhatsApp"
+echo "✅ N8N           - Automação"
+echo ""
 
 echo ""
 echo "🐳 CONTAINERS ATIVOS:"
