@@ -112,34 +112,50 @@ setup_portainer_auto() {
         # Obter Swarm ID
         SWARM_ID=$(docker info --format '{{.Swarm.NodeID}}')
         
-        # Criar API key
+    # Criar API key com retry e melhor debugging
+    log_info "🔑 Criando API Key para stacks editáveis..."
+    
+    for retry in {1..3}; do
         API_RESPONSE=$(curl -s -X POST "$portainer_url/api/users/1/tokens" \
             -H "Authorization: Bearer $JWT_TOKEN" \
             -H "Content-Type: application/json" \
             -d "{
-                \"description\": \"setupalicia-auto\"
+                \"description\": \"setupalicia-auto-$(date +%s)\"
             }" 2>/dev/null)
+        
+        log_info "📋 Tentativa $retry - Resposta API: ${API_RESPONSE:0:100}..."
         
         if echo "$API_RESPONSE" | grep -q "rawAPIKey"; then
             PORTAINER_API_KEY=$(echo "$API_RESPONSE" | grep -o '"rawAPIKey":"[^"]*' | cut -d'"' -f4)
-            log_success "✅ API Key criada automaticamente!"
             
-            # Salvar credenciais no .env
-            echo "PORTAINER_USER=$PORTAINER_USER" >> .env
-            echo "PORTAINER_PASS=$PORTAINER_PASS" >> .env
-            echo "PORTAINER_API_KEY=$PORTAINER_API_KEY" >> .env
-            echo "SWARM_ID=$SWARM_ID" >> .env
-            
-            # Verificar se API Key foi salva corretamente
-            if [ ! -z "$PORTAINER_API_KEY" ]; then
-                log_success "🔑 API Key configurada: ${PORTAINER_API_KEY:0:20}..."
-                return 0
+            if [ ! -z "$PORTAINER_API_KEY" ] && [ ${#PORTAINER_API_KEY} -gt 10 ]; then
+                log_success "✅ API Key criada com sucesso: ${PORTAINER_API_KEY:0:20}..."
+                
+                # Salvar credenciais no .env
+                echo "PORTAINER_USER=$PORTAINER_USER" >> .env
+                echo "PORTAINER_PASS=$PORTAINER_PASS" >> .env
+                echo "PORTAINER_API_KEY=$PORTAINER_API_KEY" >> .env
+                echo "SWARM_ID=$SWARM_ID" >> .env
+                
+                # Testar API Key imediatamente
+                TEST_RESPONSE=$(curl -s -X GET "$portainer_url/api/stacks" \
+                    -H "X-API-Key: $PORTAINER_API_KEY" 2>/dev/null)
+                
+                if echo "$TEST_RESPONSE" | grep -q "\[" || echo "$TEST_RESPONSE" | grep -q "\{" ; then
+                    log_success "🚀 API Key testada e funcionando! Stacks serão editáveis."
+                    return 0
+                else
+                    log_warning "⚠️ API Key criada mas falhou no teste. Tentando novamente..."
+                fi
             else
-                log_warning "⚠️ API Key vazia - usando método fallback"
+                log_warning "⚠️ API Key vazia ou inválida na tentativa $retry"
             fi
         else
-            log_warning "⚠️ Falha ao criar API Key: $API_RESPONSE"
+            log_warning "⚠️ Falha ao criar API Key (tentativa $retry): $API_RESPONSE"
         fi
+        
+        sleep 5
+    done
     fi
     
     log_warning "⚠️ Não foi possível criar conta automática - usando método manual"
@@ -152,20 +168,39 @@ create_stack_via_api() {
     local stack_name=$1
     local yaml_file=$2
     
-    if [ -z "$PORTAINER_API_KEY" ] || [ -z "$SWARM_ID" ]; then
-        log_warning "⚠️ API não configurada - usando CLI"
+    # Verificar se temos API Key válida
+    if [ -z "$PORTAINER_API_KEY" ] || [ ${#PORTAINER_API_KEY} -lt 10 ]; then
+        log_warning "⚠️ API Key não disponível - usando CLI (stacks não serão editáveis)"
         docker stack deploy --prune --resolve-image always -c "$yaml_file" "$stack_name"
         save_yaml_for_editing "$stack_name" "$yaml_file"
         return
     fi
     
-    log_info "🚀 Criando stack $stack_name via API Portainer (editável)..."
+    # Verificar se temos Swarm ID
+    if [ -z "$SWARM_ID" ]; then
+        SWARM_ID=$(docker info --format '{{.Swarm.NodeID}}')
+    fi
     
-    # Ler conteúdo do YAML
+    log_info "🚀 Criando stack $stack_name via API Portainer (EDITÁVEL)..."
+    
+    # Ler conteúdo do YAML e escapar adequadamente
+    if [ ! -f "$yaml_file" ]; then
+        log_error "❌ Arquivo $yaml_file não encontrado"
+        return 1
+    fi
+    
     YAML_CONTENT=$(cat "$yaml_file")
     
-    # Criar stack via API
-    API_RESPONSE=$(curl -s -X POST "https://$DOMINIO_PORTAINER/api/stacks" \
+    # Decidir URL baseado em qual funcionou antes
+    local portainer_url
+    if curl -s "http://localhost:9000/api/status" >/dev/null 2>&1; then
+        portainer_url="http://localhost:9000"
+    else
+        portainer_url="https://$DOMINIO_PORTAINER"
+    fi
+    
+    # Criar stack via API com JSON adequadamente escapado
+    API_RESPONSE=$(curl -s -X POST "$portainer_url/api/stacks" \
         -H "X-API-Key: $PORTAINER_API_KEY" \
         -H "Content-Type: application/json" \
         -d "{
@@ -174,13 +209,20 @@ create_stack_via_api() {
             \"StackFileContent\": $(echo "$YAML_CONTENT" | jq -Rs .)
         }" 2>/dev/null)
     
-    if echo "$API_RESPONSE" | grep -q "$stack_name"; then
-        log_success "✅ Stack $stack_name criada via API (editável no Portainer)!"
+    # Verificar se a stack foi criada com sucesso
+    if echo "$API_RESPONSE" | grep -q "\"Id\"" && echo "$API_RESPONSE" | grep -q "$stack_name"; then
+        log_success "✅ Stack $stack_name criada via API - TOTALMENTE EDITÁVEL no Portainer!"
         save_yaml_for_editing "$stack_name" "$yaml_file"
+        
+        # Aguardar um pouco para stack estabilizar
+        sleep 10
+        return 0
     else
-        log_warning "⚠️ Falha na API - usando CLI como fallback"
+        log_warning "⚠️ Falha na API: $API_RESPONSE"
+        log_info "🔄 Usando CLI como fallback"
         docker stack deploy --prune --resolve-image always -c "$yaml_file" "$stack_name"
         save_yaml_for_editing "$stack_name" "$yaml_file"
+        return 1
     fi
 }
 
@@ -1297,49 +1339,39 @@ echo "│ 🔐 N8N Encryption Key: $N8N_KEY"
 echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
 echo "┌──────────────────────────────────────────────────────────────┐"
-echo "│                   ✅ STACKS EDITÁVEIS NO PORTAINER              │"
+if [ ! -z "$PORTAINER_API_KEY" ] && [ ${#PORTAINER_API_KEY} -gt 10 ]; then
+echo "│                   🚀 STACKS TOTALMENTE EDITÁVEIS!              │"
 echo "├──────────────────────────────────────────────────────────────┤"
-if [ ! -z "$PORTAINER_API_KEY" ]; then
 echo "│ 🎉 SUCESSO! Stacks criadas via API são EDITÁVEIS!           │"
-echo "│ 🚀 Acesse Portainer > Stacks para editar                    │"
+echo "│ 🚀 Como editar:                                          │"
+echo "│   1. Acesse Portainer com as credenciais acima            │"
+echo "│   2. Vá em 'Stacks'                                         │"
+echo "│   3. Clique na stack desejada                            │"
+echo "│   4. Clique em 'Editor'                                  │"
+echo "│   5. Faça suas alterações e clique 'Update'              │"
 else
+echo "│                   📝 STACKS EDITÁVEIS VIA UPLOAD              │"
+echo "├──────────────────────────────────────────────────────────────┤"
 echo "│ 📝 Método de edição: Upload de arquivos                    │"
 echo "│ 📁 Arquivos salvos em: /opt/setupalicia/stacks/             │"
-fi
 echo "│                                                              │"
 echo "│ 📝 Como editar:                                           │"
 echo "│ 1. Acesse Portainer com as credenciais acima              │"
-echo "│ 2. Vá em 'Stacks'                                           │"
-echo "│ 3. Clique na stack desejada > 'Editor'                    │"
-echo "│ 4. Faça suas alterações e clique 'Update'                  │"
-echo "└──────────────────────────────────────────────────────────────┘"
-echo "└──────────────────────────────────────────────────────────────┘"
-echo ""
-echo "┌──────────────────────────────────────────────────────────────┐"
-echo "│                   📝 COMO EDITAR STACKS                         │"
-echo "├──────────────────────────────────────────────────────────────┤"
-echo "│ 🎯 MÉTODO RECOMENDADO:                                       │"
-echo "│ 1. Acesse Portainer: https://$DOMINIO_PORTAINER             │"
 echo "│ 2. Vá em 'Stacks' > 'Add stack'                             │"
-echo "│ 3. Escolha 'Upload' e selecione arquivo de:                 │"
-echo "│    /opt/setupalicia/stacks/[nome_da_stack].yaml             │"
+echo "│ 3. Escolha 'Upload' e selecione arquivo                   │"
 echo "│ 4. Edite conforme necessário e faça deploy                  │"
-echo "│                                                              │"
-echo "│ 📂 Arquivos salvos em: /opt/setupalicia/stacks/             │"
-echo "│ • postgres.yaml  • redis.yaml    • evolution.yaml          │"
-echo "│ • n8n.yaml       • traefik.yaml  • portainer.yaml          │"
-echo "│                                                              │"
-echo "│ ⚠️ IMPORTANTE: As stacks atuais foram criadas via CLI        │"
-echo "│    Para editá-las no Portainer, use o método acima          │"
-echo "└──────────────────────────────────────────────────────────────┘"
-echo "└──────────────────────────────────────────────────────────────┘"
-echo ""
+fi
+
 echo "┌──────────────────────────────────────────────────────────────┐"
 echo "│                        INFORMAÇÕES IMPORTANTES                    │"
 echo "├──────────────────────────────────────────────────────────────┤"
 echo "│ • SSL processado automaticamente em background               │"
 echo "│ • Redirecionamento HTTP→HTTPS ativo                          │"
-echo "│ • ⚠️  IMPORTANTE: Crie conta Portainer em 5 minutos!        │"
+if [ -z "$PORTAINER_API_KEY" ] || [ ${#PORTAINER_API_KEY} -lt 10 ]; then
+echo "│ • 📝 Stacks editáveis via upload de arquivos               │"
+else
+echo "│ • 🚀 Stacks EDITÁVEIS diretamente no Portainer            │"
+fi
 echo "│ • 🔑 Configure conta administrador no N8N                   │"
 echo "│ • IP do servidor: $server_ip                    │"
 echo "└──────────────────────────────────────────────────────────────┘"
