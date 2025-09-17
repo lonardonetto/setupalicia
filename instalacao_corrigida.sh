@@ -24,7 +24,7 @@ save_yaml_for_editing() {
     fi
 }
 
-# Função para configurar Portainer automaticamente - VERSÃO DIRETA E SIMPLES
+# Função para configurar Portainer automaticamente - VERSÃO FINAL SIMPLES
 setup_portainer_auto() {
     log_info "🔧 Configurando Portainer automaticamente..."
     
@@ -34,48 +34,10 @@ setup_portainer_auto() {
     
     log_info "👤 Criando conta: $PORTAINER_USER"
     
-    # DETECTAR E RESOLVER TIMEOUT DE SEGURANÇA DO PORTAINER
-    log_info "🔍 Verificando se Portainer tem timeout de segurança..."
+    # Usar HTTPS direto (SSL já foi verificado)
+    local portainer_url="https://$DOMINIO_PORTAINER"
     
-    TIMEOUT_CHECK=$(curl -s "$portainer_url" --max-time 5 2>/dev/null || true)
-    if echo "$TIMEOUT_CHECK" | grep -qi "timed out for security" || echo "$TIMEOUT_CHECK" | grep -qi "timeout"; then
-        log_warning "⚠️ PORTAINER COM TIMEOUT DE SEGURANÇA DETECTADO!"
-        log_info "🔄 Reiniciando Portainer para resolver timeout..."
-        
-        # Reiniciar serviço do Portainer
-        docker service update --force portainer_portainer >/dev/null 2>&1
-        
-        # Aguardar reinicialização
-        log_info "⏳ Aguardando reinicialização (60 segundos)..."
-        sleep 60
-        
-        # Verificar se voltou ao normal
-        for timeout_retry in {1..15}; do
-            if curl -s "$portainer_url/api/status" --max-time 5 >/dev/null 2>&1; then
-                log_success "✅ Portainer reiniciado e funcionando!"
-                break
-            fi
-            log_info "   ... aguardando estabilizar ($timeout_retry/15)..."
-            sleep 10
-        done
-    fi
-    
-    # Detectar URL do Portainer após resolver timeout
-    local portainer_url
-    if curl -s "http://localhost:9000/api/status" --max-time 3 >/dev/null 2>&1; then
-        portainer_url="http://localhost:9000"
-        log_info "🔗 Usando HTTP para configuração"
-    elif curl -s "https://$DOMINIO_PORTAINER/api/status" --max-time 5 >/dev/null 2>&1; then
-        portainer_url="https://$DOMINIO_PORTAINER"
-        log_info "🔗 Usando HTTPS para configuração"
-    else
-        log_warning "⚠️ Portainer não acessível mesmo após reinicialização"
-        return 1
-    fi
-    
-    # Criar conta admin (tentar primeiro)
-    log_info "👤 Criando conta administrador..."
-    
+    # Criar conta admin
     INIT_RESPONSE=$(curl -s -X POST "$portainer_url/api/users/admin/init" \
         -H "Content-Type: application/json" \
         -d "{
@@ -83,20 +45,14 @@ setup_portainer_auto() {
             \"Password\": \"$PORTAINER_PASS\"
         }" 2>/dev/null)
     
-    log_info "📋 Resposta criação: ${INIT_RESPONSE:0:80}..."
-    
     # Se falhou, tentar login direto
     if ! echo "$INIT_RESPONSE" | grep -qi "jwt"; then
-        log_info "🔄 Tentando login direto..."
-        
         INIT_RESPONSE=$(curl -s -X POST "$portainer_url/api/auth" \
             -H "Content-Type: application/json" \
             -d "{
                 \"Username\": \"$PORTAINER_USER\",
                 \"Password\": \"$PORTAINER_PASS\"
             }" 2>/dev/null)
-        
-        log_info "📋 Resposta login: ${INIT_RESPONSE:0:80}..."
     fi
     
     # Extrair JWT
@@ -108,14 +64,11 @@ setup_portainer_auto() {
         fi
         
         if [ ! -z "$JWT_TOKEN" ]; then
-            log_success "✅ JWT Token: ${JWT_TOKEN:0:30}..."
+            log_success "✅ JWT Token obtido!"
             
-            # Obter Swarm ID
             SWARM_ID=$(docker info --format '{{.Swarm.NodeID}}')
             
-            # CRIAR API KEY - AGORA COM USUÁRIO E SENHA FUNCIONANDO!
-            log_info "🔑 Criando API Key (temos acesso!)..."
-            
+            # Criar API Key
             API_RESPONSE=$(curl -s -X POST "$portainer_url/api/users/1/tokens" \
                 -H "Authorization: Bearer $JWT_TOKEN" \
                 -H "Content-Type: application/json" \
@@ -123,13 +76,11 @@ setup_portainer_auto() {
                     \"description\": \"setupalicia-$(date +%s)\"
                 }" 2>/dev/null)
             
-            log_info "📋 Resposta API: $API_RESPONSE"
-            
             if echo "$API_RESPONSE" | grep -q "rawAPIKey"; then
                 PORTAINER_API_KEY=$(echo "$API_RESPONSE" | grep -o '"rawAPIKey":"[^"]*' | cut -d'"' -f4)
                 
                 if [ ! -z "$PORTAINER_API_KEY" ] && [ ${#PORTAINER_API_KEY} -gt 10 ]; then
-                    log_success "✅ API Key criada: ${PORTAINER_API_KEY:0:20}..."
+                    log_success "✅ API Key criada com sucesso!"
                     
                     # Salvar credenciais
                     echo "PORTAINER_USER=$PORTAINER_USER" >> .env
@@ -144,23 +95,13 @@ setup_portainer_auto() {
                     if echo "$TEST_RESPONSE" | grep -q "\[" || echo "$TEST_RESPONSE" | grep -q "\{"; then
                         log_success "🚀 API Key funcionando! Stacks serão editáveis!"
                         return 0
-                    else
-                        log_warning "⚠️ API Key teste falhou: ${TEST_RESPONSE:0:50}..."
                     fi
-                else
-                    log_error "❌ API Key vazia: '$PORTAINER_API_KEY'"
                 fi
-            else
-                log_error "❌ Não contém rawAPIKey: $API_RESPONSE"
             fi
-        else
-            log_error "❌ JWT Token vazio"
         fi
-    else
-        log_error "❌ Não contém JWT: $INIT_RESPONSE"
     fi
     
-    log_warning "⚠️ Configuração automática falhou"
+    log_warning "⚠️ Configuração automática falhou - usando método manual"
     return 1
 }
     
@@ -1105,11 +1046,15 @@ for ssl_wait in {1..60}; do
     sleep 10
 done
 
-# Aguardar Portainer estabilizar completamente
-log_info "⏳ Aguardando Portainer estabilizar completamente..."
-sleep 30
+# Aguardar Portainer estabilizar completamente E resolver timeout
+log_info "⏳ Aguardando Portainer estabilizar e resolvendo timeout..."
 
-# Configurar Portainer automaticamente DEPOIS do SSL
+# RESOLVER TIMEOUT: Reiniciar Portainer uma vez para limpar timeout de segurança
+log_info "🔄 Reiniciando Portainer para garantir funcionamento sem timeout..."
+docker service update --force portainer_portainer >/dev/null 2>&1
+sleep 60
+
+# Configurar Portainer automaticamente DEPOIS de resolver timeout
 if setup_portainer_auto; then
     log_success "✅ Portainer configurado automaticamente!"
 else
