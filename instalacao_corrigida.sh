@@ -87,7 +87,7 @@ setup_portainer_auto() {
     
     # Decidir URL baseado em qual funcionou
     local portainer_url
-    if curl -s "http://localhost:9000/api/status" >/dev/null 2>&1; then
+    if curl -s "http://localhost:9000/api/status" --max-time 5 >/dev/null 2>&1; then
         portainer_url="http://localhost:9000"
         log_info "🔗 Usando HTTP para configuração inicial"
     else
@@ -95,27 +95,131 @@ setup_portainer_auto() {
         log_info "🔗 Usando HTTPS para configuração"
     fi
     
-    # Criar usuário admin via API
-    INIT_RESPONSE=$(curl -s -X POST "$portainer_url/api/users/admin/init" \
-        -H "Content-Type: application/json" \
-        -d "{
-            \"Username\": \"$PORTAINER_USER\",
-            \"Password\": \"$PORTAINER_PASS\"
-        }" 2>/dev/null)
+    # Verificar estado do Portainer antes de prosseguir
+    log_info "🔍 Verificando estado atual do Portainer..."
+    STATUS_RESPONSE=$(curl -s "$portainer_url/api/status" --max-time 10 2>/dev/null)
+    log_info "📋 Status do Portainer: $STATUS_RESPONSE"
     
-    if echo "$INIT_RESPONSE" | grep -q "JWT"; then
-        log_success "✅ Conta criada automaticamente!"
+    # Criar usuário admin via API com melhor debugging
+    log_info "👤 Tentando criar conta administrador..."
+    
+    for init_retry in {1..3}; do
+        log_info "📋 Tentativa $init_retry/3 de criação da conta..."
         
-        # Extrair JWT token
-        JWT_TOKEN=$(echo "$INIT_RESPONSE" | grep -o '"jwt":"[^"]*' | cut -d'"' -f4)
+        INIT_RESPONSE=$(curl -s -w "HTTP_CODE:%{http_code}" -X POST "$portainer_url/api/users/admin/init" \
+            -H "Content-Type: application/json" \
+            -d "{
+                \"Username\": \"$PORTAINER_USER\",
+                \"Password\": \"$PORTAINER_PASS\"
+            }" 2>/dev/null)
         
-        # Obter Swarm ID
-        SWARM_ID=$(docker info --format '{{.Swarm.NodeID}}')
+        # Separar resposta do HTTP code
+        HTTP_CODE=$(echo "$INIT_RESPONSE" | grep -o "HTTP_CODE:[0-9]*" | cut -d: -f2)
+        INIT_BODY=$(echo "$INIT_RESPONSE" | sed 's/HTTP_CODE:[0-9]*$//')
         
-    # Criar API key com retry e melhor debugging
+        log_info "📋 Status HTTP: $HTTP_CODE"
+        log_info "📋 Resposta completa: $INIT_BODY"
+        
+        # Verificar se obtemos JWT (tanto em 'JWT' quanto 'jwt')
+        if echo "$INIT_BODY" | grep -qi "jwt" && [ "$HTTP_CODE" = "200" ]; then
+            log_success "✅ Conta criada automaticamente!"
+            
+            # Extrair JWT token (buscar por ambos os casos)
+            JWT_TOKEN=$(echo "$INIT_BODY" | grep -o '"[Jj][Ww][Tt]":"[^"]*' | cut -d'"' -f4)
+            
+            if [ -z "$JWT_TOKEN" ]; then
+                # Tentar extrair de outra forma
+                JWT_TOKEN=$(echo "$INIT_BODY" | sed -n 's/.*"[Jj][Ww][Tt]":\s*"\([^"]*\)".*/\1/p')
+            fi
+            
+            log_info "🔑 JWT Token obtido: ${JWT_TOKEN:0:30}..."
+            
+            # Verificar se o token não está vazio
+            if [ -z "$JWT_TOKEN" ]; then
+                log_error "❌ JWT Token vazio após extração!"
+                continue
+            fi
+            
+            # Obter Swarm ID
+            SWARM_ID=$(docker info --format '{{.Swarm.NodeID}}')
+            log_info "🔍 Swarm ID obtido: $SWARM_ID"
+            
+            break
+        elif [ "$HTTP_CODE" = "409" ]; then
+            log_info "📋 Conta já existe, tentando fazer login..."
+            
+            LOGIN_RESPONSE=$(curl -s -w "HTTP_CODE:%{http_code}" -X POST "$portainer_url/api/auth" \
+                -H "Content-Type: application/json" \
+                -d "{
+                    \"Username\": \"$PORTAINER_USER\",
+                    \"Password\": \"$PORTAINER_PASS\"
+                }" 2>/dev/null)
+            
+            LOGIN_HTTP_CODE=$(echo "$LOGIN_RESPONSE" | grep -o "HTTP_CODE:[0-9]*" | cut -d: -f2)
+            LOGIN_BODY=$(echo "$LOGIN_RESPONSE" | sed 's/HTTP_CODE:[0-9]*$//')
+            
+            log_info "📋 Login HTTP Code: $LOGIN_HTTP_CODE"
+            log_info "📋 Login Response: $LOGIN_BODY"
+            
+            if echo "$LOGIN_BODY" | grep -qi "jwt" && [ "$LOGIN_HTTP_CODE" = "200" ]; then
+                JWT_TOKEN=$(echo "$LOGIN_BODY" | grep -o '"[Jj][Ww][Tt]":"[^"]*' | cut -d'"' -f4)
+                if [ -z "$JWT_TOKEN" ]; then
+                    JWT_TOKEN=$(echo "$LOGIN_BODY" | sed -n 's/.*"[Jj][Ww][Tt]":\s*"\([^"]*\)".*/\1/p')
+                fi
+                
+                if [ ! -z "$JWT_TOKEN" ]; then
+                    log_success "✅ Login realizado com sucesso!"
+                    log_info "🔑 JWT Token do login: ${JWT_TOKEN:0:30}..."
+                    SWARM_ID=$(docker info --format '{{.Swarm.NodeID}}')
+                    break
+                fi
+            fi
+        else
+            log_warning "⚠️ Falha na tentativa $init_retry (HTTP: $HTTP_CODE): $INIT_BODY"
+        fi
+        
+        if [ $init_retry -lt 3 ]; then
+            log_info "⏳ Aguardando 10 segundos antes da próxima tentativa..."
+            sleep 10
+        fi
+    done
+    
+    # Verificar se conseguimos obter JWT
+    if [ -z "$JWT_TOKEN" ]; then
+        log_warning "⚠️ Não foi possível obter JWT token"
+        return 1
+    fi
+        
+    # Aguardar um pouco para garantir que o Portainer esteja totalmente pronto
+    log_info "⏳ Aguardando Portainer estabilizar para criar API Key..."
+    sleep 10
+    
+    # Criar API key com melhor debugging e múltiplas tentativas
     log_info "🔑 Criando API Key para stacks editáveis..."
     
-    for retry in {1..3}; do
+    for retry in {1..5}; do
+        log_info "📋 Tentativa $retry/5 de criação da API Key..."
+        
+        # Primeiro, verificar se conseguimos fazer login novamente para renovar o token se necessário
+        if [ $retry -gt 2 ]; then
+            log_info "🔄 Renovando autenticação..."
+            LOGIN_RESPONSE=$(curl -s -X POST "$portainer_url/api/auth" \
+                -H "Content-Type: application/json" \
+                -d "{
+                    \"Username\": \"$PORTAINER_USER\",
+                    \"Password\": \"$PORTAINER_PASS\"
+                }" 2>/dev/null)
+            
+            if echo "$LOGIN_RESPONSE" | grep -qi "jwt"; then
+                JWT_TOKEN=$(echo "$LOGIN_RESPONSE" | grep -o '"[Jj][Ww][Tt]":"[^"]*' | cut -d'"' -f4)
+                if [ -z "$JWT_TOKEN" ]; then
+                    JWT_TOKEN=$(echo "$LOGIN_RESPONSE" | sed -n 's/.*"[Jj][Ww][Tt]":\s*"\([^"]*\)".*/\1/p')
+                fi
+                log_info "🔄 Token renovado: ${JWT_TOKEN:0:30}..."
+            fi
+        fi
+        
+        # Tentar criar API Key
         API_RESPONSE=$(curl -s -X POST "$portainer_url/api/users/1/tokens" \
             -H "Authorization: Bearer $JWT_TOKEN" \
             -H "Content-Type: application/json" \
@@ -123,8 +227,9 @@ setup_portainer_auto() {
                 \"description\": \"setupalicia-auto-$(date +%s)\"
             }" 2>/dev/null)
         
-        log_info "📋 Tentativa $retry - Resposta API: ${API_RESPONSE:0:100}..."
+        log_info "📋 Resposta completa da API ($retry): $API_RESPONSE"
         
+        # Verificar se obtivemos uma API Key válida
         if echo "$API_RESPONSE" | grep -q "rawAPIKey"; then
             PORTAINER_API_KEY=$(echo "$API_RESPONSE" | grep -o '"rawAPIKey":"[^"]*' | cut -d'"' -f4)
             
@@ -137,24 +242,34 @@ setup_portainer_auto() {
                 echo "PORTAINER_API_KEY=$PORTAINER_API_KEY" >> .env
                 echo "SWARM_ID=$SWARM_ID" >> .env
                 
-                # Testar API Key imediatamente
-                TEST_RESPONSE=$(curl -s -X GET "$portainer_url/api/stacks" \
+                # Testar API Key imediatamente com timeout maior
+                log_info "🧪 Testando API Key..."
+                TEST_RESPONSE=$(curl -s --max-time 15 -X GET "$portainer_url/api/stacks" \
                     -H "X-API-Key: $PORTAINER_API_KEY" 2>/dev/null)
+                
+                log_info "📋 Teste da API Key: ${TEST_RESPONSE:0:100}..."
                 
                 if echo "$TEST_RESPONSE" | grep -q "\[" || echo "$TEST_RESPONSE" | grep -q "\{" ; then
                     log_success "🚀 API Key testada e funcionando! Stacks serão editáveis."
                     return 0
                 else
-                    log_warning "⚠️ API Key criada mas falhou no teste. Tentando novamente..."
+                    log_warning "⚠️ API Key criada mas falhou no teste. Verificando detalhes..."
+                    log_info "📋 Detalhes do erro: $TEST_RESPONSE"
                 fi
             else
-                log_warning "⚠️ API Key vazia ou inválida na tentativa $retry"
+                log_warning "⚠️ API Key vazia ou muito curta na tentativa $retry (tamanho: ${#PORTAINER_API_KEY})"
+                log_info "📋 Conteúdo extraído: '$PORTAINER_API_KEY'"
             fi
         else
-            log_warning "⚠️ Falha ao criar API Key (tentativa $retry): $API_RESPONSE"
+            log_warning "⚠️ Resposta não contém 'rawAPIKey' na tentativa $retry"
+            log_info "📋 Resposta recebida: $API_RESPONSE"
         fi
         
-        sleep 5
+        # Aguardar antes da próxima tentativa
+        if [ $retry -lt 5 ]; then
+            log_info "⏳ Aguardando 10 segundos antes da próxima tentativa..."
+            sleep 10
+        fi
     done
     fi
     
