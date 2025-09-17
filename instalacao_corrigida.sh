@@ -24,7 +24,7 @@ save_yaml_for_editing() {
     fi
 }
 
-# Função para configurar Portainer automaticamente - VERSÃO FINAL SIMPLES
+# Função para configurar Portainer automaticamente - VERSÃO FINAL QUE FUNCIONA
 setup_portainer_auto() {
     log_info "🔧 Configurando Portainer automaticamente..."
     
@@ -33,75 +33,98 @@ setup_portainer_auto() {
     PORTAINER_PASS=$(openssl rand -base64 12 | tr -d "=+/" | cut -c1-12)
     
     log_info "👤 Criando conta: $PORTAINER_USER"
+    log_info "🔐 Senha: $PORTAINER_PASS"
     
     # Usar HTTPS direto (SSL já foi verificado)
     local portainer_url="https://$DOMINIO_PORTAINER"
     
-    # Criar conta admin
-    INIT_RESPONSE=$(curl -s -X POST "$portainer_url/api/users/admin/init" \
-        -H "Content-Type: application/json" \
-        -d "{
-            \"Username\": \"$PORTAINER_USER\",
-            \"Password\": \"$PORTAINER_PASS\"
-        }" 2>/dev/null)
-    
-    # Se falhou, tentar login direto
-    if ! echo "$INIT_RESPONSE" | grep -qi "jwt"; then
-        INIT_RESPONSE=$(curl -s -X POST "$portainer_url/api/auth" \
+    # TENTAR MÚLTIPLAS VEZES ATÉ FUNCIONAR
+    for attempt in {1..10}; do
+        log_info "📋 Tentativa $attempt/10 de configuração..."
+        
+        # Criar conta admin
+        INIT_RESPONSE=$(curl -s -X POST "$portainer_url/api/users/admin/init" \
             -H "Content-Type: application/json" \
             -d "{
                 \"Username\": \"$PORTAINER_USER\",
                 \"Password\": \"$PORTAINER_PASS\"
             }" 2>/dev/null)
-    fi
-    
-    # Extrair JWT
-    if echo "$INIT_RESPONSE" | grep -qi "jwt"; then
-        JWT_TOKEN=$(echo "$INIT_RESPONSE" | grep -o '"[Jj][Ww][Tt]":"[^"]*' | cut -d'"' -f4)
         
-        if [ -z "$JWT_TOKEN" ]; then
-            JWT_TOKEN=$(echo "$INIT_RESPONSE" | sed -n 's/.*"[Jj][Ww][Tt]":\s*"\([^"]*\)".*/\1/p')
-        fi
-        
-        if [ ! -z "$JWT_TOKEN" ]; then
-            log_success "✅ JWT Token obtido!"
-            
-            SWARM_ID=$(docker info --format '{{.Swarm.NodeID}}')
-            
-            # Criar API Key
-            API_RESPONSE=$(curl -s -X POST "$portainer_url/api/users/1/tokens" \
-                -H "Authorization: Bearer $JWT_TOKEN" \
+        # Se falhou criar, tentar login direto
+        if ! echo "$INIT_RESPONSE" | grep -qi "jwt"; then
+            INIT_RESPONSE=$(curl -s -X POST "$portainer_url/api/auth" \
                 -H "Content-Type: application/json" \
                 -d "{
-                    \"description\": \"setupalicia-$(date +%s)\"
+                    \"Username\": \"$PORTAINER_USER\",
+                    \"Password\": \"$PORTAINER_PASS\"
                 }" 2>/dev/null)
-            
-            if echo "$API_RESPONSE" | grep -q "rawAPIKey"; then
-                PORTAINER_API_KEY=$(echo "$API_RESPONSE" | grep -o '"rawAPIKey":"[^"]*' | cut -d'"' -f4)
-                
-                if [ ! -z "$PORTAINER_API_KEY" ] && [ ${#PORTAINER_API_KEY} -gt 10 ]; then
-                    log_success "✅ API Key criada com sucesso!"
-                    
-                    # Salvar credenciais
-                    echo "PORTAINER_USER=$PORTAINER_USER" >> .env
-                    echo "PORTAINER_PASS=$PORTAINER_PASS" >> .env
-                    echo "PORTAINER_API_KEY=$PORTAINER_API_KEY" >> .env
-                    echo "SWARM_ID=$SWARM_ID" >> .env
-                    
-                    # Testar API Key
-                    TEST_RESPONSE=$(curl -s -X GET "$portainer_url/api/stacks" \
-                        -H "X-API-Key: $PORTAINER_API_KEY" 2>/dev/null)
-                    
-                    if echo "$TEST_RESPONSE" | grep -q "\[" || echo "$TEST_RESPONSE" | grep -q "\{"; then
-                        log_success "🚀 API Key funcionando! Stacks serão editáveis!"
-                        return 0
-                    fi
-                fi
-            fi
         fi
-    fi
+        
+        # Extrair JWT
+        if echo "$INIT_RESPONSE" | grep -qi "jwt"; then
+            JWT_TOKEN=$(echo "$INIT_RESPONSE" | grep -o '"[Jj][Ww][Tt]":"[^"]*' | cut -d'"' -f4)
+            
+            if [ -z "$JWT_TOKEN" ]; then
+                JWT_TOKEN=$(echo "$INIT_RESPONSE" | sed -n 's/.*"[Jj][Ww][Tt]":\s*"\([^"]*\)".*/\1/p')
+            fi
+            
+            if [ ! -z "$JWT_TOKEN" ]; then
+                log_success "✅ JWT Token obtido na tentativa $attempt!"
+                
+                SWARM_ID=$(docker info --format '{{.Swarm.NodeID}}')
+                
+                # Criar API Key
+                API_RESPONSE=$(curl -s -X POST "$portainer_url/api/users/1/tokens" \
+                    -H "Authorization: Bearer $JWT_TOKEN" \
+                    -H "Content-Type: application/json" \
+                    -d "{
+                        \"description\": \"setupalicia-$(date +%s)\"
+                    }" 2>/dev/null)
+                
+                if echo "$API_RESPONSE" | grep -q "rawAPIKey"; then
+                    PORTAINER_API_KEY=$(echo "$API_RESPONSE" | grep -o '"rawAPIKey":"[^"]*' | cut -d'"' -f4)
+                    
+                    if [ ! -z "$PORTAINER_API_KEY" ] && [ ${#PORTAINER_API_KEY} -gt 10 ]; then
+                        log_success "✅ API Key criada com sucesso na tentativa $attempt!"
+                        log_info "🔑 API Key: ${PORTAINER_API_KEY:0:30}..."
+                        
+                        # Salvar credenciais
+                        echo "PORTAINER_USER=$PORTAINER_USER" >> .env
+                        echo "PORTAINER_PASS=$PORTAINER_PASS" >> .env
+                        echo "PORTAINER_API_KEY=$PORTAINER_API_KEY" >> .env
+                        echo "SWARM_ID=$SWARM_ID" >> .env
+                        
+                        # Testar API Key
+                        TEST_RESPONSE=$(curl -s -X GET "$portainer_url/api/stacks" \
+                            -H "X-API-Key: $PORTAINER_API_KEY" 2>/dev/null)
+                        
+                        if echo "$TEST_RESPONSE" | grep -q "\[" || echo "$TEST_RESPONSE" | grep -q "\{"; then
+                            log_success "🚀 API Key testada e funcionando! Stacks serão editáveis!"
+                            return 0
+                        else
+                            log_warning "⚠️ API Key criada mas teste falhou - tentando novamente..."
+                        fi
+                    else
+                        log_warning "⚠️ API Key vazia na tentativa $attempt - tentando novamente..."
+                    fi
+                else
+                    log_warning "⚠️ Falha ao criar API Key na tentativa $attempt - tentando novamente..."
+                fi
+            else
+                log_warning "⚠️ JWT Token vazio na tentativa $attempt - tentando novamente..."
+            fi
+        else
+            log_warning "⚠️ Falha na autenticação na tentativa $attempt - tentando novamente..."
+        fi
+        
+        # Aguardar antes da próxima tentativa
+        if [ $attempt -lt 10 ]; then
+            log_info "⏳ Aguardando 15 segundos antes da próxima tentativa..."
+            sleep 15
+        fi
+    done
     
-    log_warning "⚠️ Configuração automática falhou - usando método manual"
+    log_error "❌ Todas as tentativas falharam - configuração manual necessária"
     return 1
 }
     
@@ -1032,6 +1055,9 @@ docker stack deploy --prune --resolve-image always -c portainer_corrigido.yaml p
 save_yaml_for_editing "portainer" "portainer_corrigido.yaml"
 wait_service_perfect "portainer" 120
 
+# FASE 1 COMPLETA - TRAEFIK E PORTAINER INSTALADOS
+log_success "✅ FASE 1 CONCLUÍDA - Traefik e Portainer instalados!"
+
 # Aguardar SSL estar 100% funcional antes de configurar
 log_info "🔐 Aguardando SSL do Portainer estar 100% funcional..."
 for ssl_wait in {1..60}; do
@@ -1046,15 +1072,35 @@ for ssl_wait in {1..60}; do
     sleep 10
 done
 
-# Aguardar Portainer estabilizar completamente E resolver timeout
-log_info "⏳ Aguardando Portainer estabilizar e resolvendo timeout..."
+# Aguardar Portainer estabilizar completamente
+log_info "⏳ Aguardando Portainer estabilizar completamente (120 segundos)..."
+sleep 120
 
-# RESOLVER TIMEOUT: Reiniciar Portainer uma vez para limpar timeout de segurança
+# RESOLVER TIMEOUT: Reiniciar Portainer para limpar qualquer timeout
 log_info "🔄 Reiniciando Portainer para garantir funcionamento sem timeout..."
 docker service update --force portainer_portainer >/dev/null 2>&1
-sleep 60
 
-# Configurar Portainer automaticamente DEPOIS de resolver timeout
+# Aguardar reinicialização completa
+log_info "⏳ Aguardando reinicialização completa (90 segundos)..."
+sleep 90
+
+# Verificar se Portainer está acessível após reinicialização
+for restart_check in {1..30}; do
+    if curl -s "https://$DOMINIO_PORTAINER/api/status" --max-time 5 >/dev/null 2>&1; then
+        log_success "✅ Portainer reiniciado e acessível!"
+        break
+    fi
+    
+    if [ $((restart_check % 10)) -eq 0 ]; then
+        log_info "   ... verificando acesso ($restart_check/30)..."
+    fi
+    sleep 5
+done
+
+# AGORA CONFIGURAR CONTA E API KEY
+log_info "🎯 INICIANDO FASE 2 - Configuração da conta e API Key..."
+
+# Configurar Portainer automaticamente DEPOIS de tudo estabilizado
 if setup_portainer_auto; then
     log_success "✅ Portainer configurado automaticamente!"
 else
