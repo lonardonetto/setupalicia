@@ -11,28 +11,42 @@ log_success() { echo -e "\033[32m[SUCESSO]\033[0m $1"; }
 log_warning() { echo -e "\033[33m[AVISO]\033[0m $1"; }
 log_error() { echo -e "\033[31m[ERRO]\033[0m $1"; }
 
-# PARAMETROS DO USUARIO - CONFIGURADOS AUTOMATICAMENTE
-SSL_EMAIL="leonardonetto1982@gmail.com"
-DOMINIO_N8N="editor.publiczap.com.br"
-DOMINIO_PORTAINER="portainer.publiczap.com.br"
-WEBHOOK_N8N="webhook.publiczap.com.br"
-DOMINIO_EVOLUTION="evo.publiczap.com.br"
+# VALIDACAO DE PARAMETROS - RECEBE DADOS COMO ARGUMENTOS
+if [ "$#" -ne 5 ]; then
+    echo "Uso: $0 <email> <dominio_n8n> <dominio_portainer> <webhook_n8n> <dominio_evolution>"
+    echo ""
+    echo "Exemplo:"
+    echo "  $0 leonardonetto1982@gmail.com editor.publiczap.com.br portainer.publiczap.com.br webhook.publiczap.com.br evo.publiczap.com.br"
+    exit 1
+fi
 
-# Validar que os dados estao corretos
-log_info "Usando configuracao:"
-echo "  Email SSL: $SSL_EMAIL"
-echo "  N8N: $DOMINIO_N8N"
-echo "  Portainer: $DOMINIO_PORTAINER"
-echo "  Webhook: $WEBHOOK_N8N"
-echo "  Evolution: $DOMINIO_EVOLUTION"
-echo ""
+# PARAMETROS RECEBIDOS COMO ARGUMENTOS
+SSL_EMAIL="$1"
+DOMINIO_N8N="$2"
+DOMINIO_PORTAINER="$3"
+WEBHOOK_N8N="$4"
+DOMINIO_EVOLUTION="$5"
+
+# Validar formato de email
+if [[ ! "$SSL_EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+    log_error "Email invalido: $SSL_EMAIL"
+    exit 1
+fi
+
+# Validar dominios
+for domain in "$DOMINIO_N8N" "$DOMINIO_PORTAINER" "$WEBHOOK_N8N" "$DOMINIO_EVOLUTION"; do
+    if [[ ! "$domain" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+        log_error "Dominio invalido: $domain"
+        exit 1
+    fi
+done
 
 clear
 echo "================================================================"
 echo "              SETUPALICIA - INSTALACAO COMPLETA               "
 echo "================================================================"
 echo ""
-echo "CONFIGURACAO VALIDADA:"
+echo "CONFIGURACAO RECEBIDA:"
 echo "  Email SSL: $SSL_EMAIL"
 echo "  N8N: $DOMINIO_N8N"
 echo "  Portainer: $DOMINIO_PORTAINER"
@@ -47,15 +61,7 @@ echo "- Evolution API v2.2.3"
 echo "- N8N"
 echo ""
 
-# Confirmacao dos dados
-read -p "Os dados acima estao corretos? (s/n): " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Ss]$ ]]; then
-    log_error "Instalacao cancelada pelo usuario!"
-    echo "Para usar outros dominios, edite o script e altere as variaveis no inicio."
-    exit 1
-fi
-log_success "Dados confirmados! Iniciando instalacao..."
+log_success "Parametros validados! Iniciando instalacao..."
 
 # Gerar chaves
 N8N_KEY=$(openssl rand -hex 16)
