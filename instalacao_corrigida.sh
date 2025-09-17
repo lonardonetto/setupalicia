@@ -34,7 +34,33 @@ setup_portainer_auto() {
     
     log_info "👤 Criando conta: $PORTAINER_USER"
     
-    # Detectar URL do Portainer
+    # DETECTAR E RESOLVER TIMEOUT DE SEGURANÇA DO PORTAINER
+    log_info "🔍 Verificando se Portainer tem timeout de segurança..."
+    
+    TIMEOUT_CHECK=$(curl -s "$portainer_url" --max-time 5 2>/dev/null || true)
+    if echo "$TIMEOUT_CHECK" | grep -qi "timed out for security" || echo "$TIMEOUT_CHECK" | grep -qi "timeout"; then
+        log_warning "⚠️ PORTAINER COM TIMEOUT DE SEGURANÇA DETECTADO!"
+        log_info "🔄 Reiniciando Portainer para resolver timeout..."
+        
+        # Reiniciar serviço do Portainer
+        docker service update --force portainer_portainer >/dev/null 2>&1
+        
+        # Aguardar reinicialização
+        log_info "⏳ Aguardando reinicialização (60 segundos)..."
+        sleep 60
+        
+        # Verificar se voltou ao normal
+        for timeout_retry in {1..15}; do
+            if curl -s "$portainer_url/api/status" --max-time 5 >/dev/null 2>&1; then
+                log_success "✅ Portainer reiniciado e funcionando!"
+                break
+            fi
+            log_info "   ... aguardando estabilizar ($timeout_retry/15)..."
+            sleep 10
+        done
+    fi
+    
+    # Detectar URL do Portainer após resolver timeout
     local portainer_url
     if curl -s "http://localhost:9000/api/status" --max-time 3 >/dev/null 2>&1; then
         portainer_url="http://localhost:9000"
@@ -43,7 +69,7 @@ setup_portainer_auto() {
         portainer_url="https://$DOMINIO_PORTAINER"
         log_info "🔗 Usando HTTPS para configuração"
     else
-        log_warning "⚠️ Portainer não acessível ainda"
+        log_warning "⚠️ Portainer não acessível mesmo após reinicialização"
         return 1
     fi
     
