@@ -11,17 +11,33 @@ log_success() { echo -e "\033[32m[SUCESSO]\033[0m $1"; }
 log_warning() { echo -e "\033[33m[AVISO]\033[0m $1"; }
 log_error() { echo -e "\033[31m[ERRO]\033[0m $1"; }
 
-# Parametros fixos do usuario
+# PARAMETROS DO USUARIO - CONFIGURADOS AUTOMATICAMENTE
 SSL_EMAIL="leonardonetto1982@gmail.com"
 DOMINIO_N8N="editor.publiczap.com.br"
 DOMINIO_PORTAINER="portainer.publiczap.com.br"
 WEBHOOK_N8N="webhook.publiczap.com.br"
 DOMINIO_EVOLUTION="evo.publiczap.com.br"
 
+# Validar que os dados estao corretos
+log_info "Usando configuracao:"
+echo "  Email SSL: $SSL_EMAIL"
+echo "  N8N: $DOMINIO_N8N"
+echo "  Portainer: $DOMINIO_PORTAINER"
+echo "  Webhook: $WEBHOOK_N8N"
+echo "  Evolution: $DOMINIO_EVOLUTION"
+echo ""
+
 clear
 echo "================================================================"
 echo "              SETUPALICIA - INSTALACAO COMPLETA               "
 echo "================================================================"
+echo ""
+echo "CONFIGURACAO VALIDADA:"
+echo "  Email SSL: $SSL_EMAIL"
+echo "  N8N: $DOMINIO_N8N"
+echo "  Portainer: $DOMINIO_PORTAINER"
+echo "  Webhook: $WEBHOOK_N8N"
+echo "  Evolution: $DOMINIO_EVOLUTION"
 echo ""
 echo "Instalando TUDO em um unico script:"
 echo "- Traefik (SSL automatico)"
@@ -30,6 +46,16 @@ echo "- PostgreSQL + Redis"
 echo "- Evolution API v2.2.3"
 echo "- N8N"
 echo ""
+
+# Confirmacao dos dados
+read -p "Os dados acima estao corretos? (s/n): " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Ss]$ ]]; then
+    log_error "Instalacao cancelada pelo usuario!"
+    echo "Para usar outros dominios, edite o script e altere as variaveis no inicio."
+    exit 1
+fi
+log_success "Dados confirmados! Iniciando instalacao..."
 
 # Gerar chaves
 N8N_KEY=$(openssl rand -hex 16)
@@ -389,17 +415,18 @@ echo "================================================================"
 echo ""
 echo "TODAS AS APLICACOES INSTALADAS:"
 echo ""
-echo "ACESSOS:"
+echo "ACESSOS COM SEUS DOMINIOS:"
 echo "- Portainer: https://$DOMINIO_PORTAINER"
 echo "  Usuario: $PORTAINER_USER"
 echo "  Senha: $PORTAINER_PASS"
 echo ""
-echo "- N8N: https://$DOMINIO_N8N"
-echo "- Webhook: https://$WEBHOOK_N8N"
+echo "- N8N (Editor): https://$DOMINIO_N8N"
+echo "- N8N (Webhook): https://$WEBHOOK_N8N"
 echo "- Evolution API: https://$DOMINIO_EVOLUTION"
 echo "  API Key: $EVOLUTION_API_KEY"
 echo ""
-echo "DADOS IMPORTANTES:"
+echo "DADOS TECNICOS:"
+echo "- Email SSL (Let's Encrypt): $SSL_EMAIL"
 echo "- PostgreSQL Password: $POSTGRES_PASSWORD"
 echo "- N8N Encryption Key: $N8N_KEY"
 
