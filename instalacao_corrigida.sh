@@ -932,13 +932,23 @@ portainer_login() {
     local username=$2
     local password=$3
     
+    # Aguardar um pouco para garantir que o Portainer está pronto
+    sleep 2
+    
     local response=$(curl -sk -X POST \
         "$portainer_url/api/auth" \
         -H "Content-Type: application/json" \
-        -d "{\"Username\":\"$username\",\"Password\":\"$password\"}" 2>/dev/null)
+        -d "{\"Username\":\"$username\",\"Password\":\"$password\"}" \
+        --max-time 10 2>/dev/null)
     
     local jwt_token=$(echo "$response" | sed -n 's/.*"jwt":"\([^"]*\).*/\1/p')
-    echo "$jwt_token"
+    
+    # Verificar se o token é válido
+    if [ ! -z "$jwt_token" ] && [ ${#jwt_token} -gt 50 ]; then
+        echo "$jwt_token"
+    else
+        echo ""
+    fi
 }
 
 # Função para deploy via API do Portainer (FULL CONTROL)
@@ -981,12 +991,22 @@ deploy_via_portainer_api() {
         \"StackFileContent\": $escaped_content
     }"
     
-    # Testar se o token ainda é válido
+    # Testar se o token ainda é válido e renovar se necessário
     local test_response=$(curl -sk -H "Authorization: Bearer $jwt_token" "$portainer_url/api/users/admin/check" 2>/dev/null)
     if [ "$test_response" != "true" ]; then
-        log_warning "⚠️ Token JWT inválido ou expirado"
-        docker stack deploy --prune --resolve-image always -c "$yaml_file" "$stack_name"
-        return 1
+        log_warning "⚠️ Token JWT inválido, renovando..."
+        
+        # Tentar renovar o token
+        local new_token=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
+        if [ ! -z "$new_token" ]; then
+            jwt_token="$new_token"
+            JWT_TOKEN="$new_token"  # Atualizar variável global
+            log_success "✅ Token renovado com sucesso!"
+        else
+            log_error "❌ Falha ao renovar token, usando CLI"
+            docker stack deploy --prune --resolve-image always -c "$yaml_file" "$stack_name"
+            return 1
+        fi
     fi
     
     # Debug: mostrar informações
@@ -1114,12 +1134,20 @@ create_portainer_admin_auto() {
         log_info "👤 Usuário: $PORTAINER_ADMIN_USER"
         log_info "🔐 Senha: $PORTAINER_ADMIN_PASSWORD"
         
+        # Aguardar um pouco antes do login
+        sleep 5
+        
         # Fazer login imediatamente para obter JWT
+        log_info "🔐 Fazendo login para obter token..."
         JWT_TOKEN=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
         if [ ! -z "$JWT_TOKEN" ]; then
             PORTAINER_API_URL="$portainer_url"
             USE_PORTAINER_API=true
             log_success "✅ Login automático realizado! Deploy via API ativado."
+            log_info "🔑 Token válido obtido (${#JWT_TOKEN} caracteres)"
+        else
+            log_warning "⚠️ Falha ao obter token, deploy será via CLI"
+            USE_PORTAINER_API=false
         fi
         
         return 0
