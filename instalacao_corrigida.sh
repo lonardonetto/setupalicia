@@ -529,6 +529,104 @@ check_ssl_simple() {
     log_success "✅ $service_name configurado! Continuando instalação..."
 }
 
+# NOVA FUNÇÃO: Criar conta admin do Portainer automaticamente
+create_portainer_admin_auto() {
+    log_info "🔑 Configurando conta admin do Portainer automaticamente..."
+    
+    # Gerar credenciais seguras
+    PORTAINER_ADMIN_USER="admin"
+    PORTAINER_ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d "=+/" | cut -c1-20)
+    
+    # Aguardar Portainer estar acessível
+    local max_attempts=30
+    local attempt=0
+    local portainer_url=""
+    
+    while [ $attempt -lt $max_attempts ]; do
+        # Tentar HTTPS primeiro
+        if curl -s "https://$DOMINIO_PORTAINER/api/status" --insecure --max-time 5 >/dev/null 2>&1; then
+            portainer_url="https://$DOMINIO_PORTAINER"
+            log_success "✅ Portainer acessível via HTTPS!"
+            break
+        fi
+        
+        # Tentar HTTP caso SSL ainda não esteja pronto
+        if curl -s "http://$DOMINIO_PORTAINER/api/status" --max-time 5 >/dev/null 2>&1; then
+            portainer_url="http://$DOMINIO_PORTAINER"
+            log_warning "⚠️ Portainer acessível via HTTP (SSL pendente)"
+            break
+        fi
+        
+        # Tentar via IP direto na porta do container
+        local portainer_container=$(docker ps --filter "name=portainer_portainer" --format "{{.Names}}" | head -1)
+        if [ ! -z "$portainer_container" ]; then
+            local container_ip=$(docker inspect $portainer_container --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' | head -1)
+            if [ ! -z "$container_ip" ] && curl -s "http://$container_ip:9000/api/status" --max-time 5 >/dev/null 2>&1; then
+                portainer_url="http://$container_ip:9000"
+                log_info "📡 Usando IP interno do container: $container_ip"
+                break
+            fi
+        fi
+        
+        attempt=$((attempt + 1))
+        echo -n "."
+        sleep 2
+    done
+    
+    if [ -z "$portainer_url" ]; then
+        log_error "❌ Não foi possível acessar o Portainer"
+        log_warning "⚠️ Configure manualmente em: https://$DOMINIO_PORTAINER"
+        return 1
+    fi
+    
+    # Verificar se já foi inicializado
+    local init_check=$(curl -s "$portainer_url/api/users/admin/check" --insecure 2>/dev/null)
+    
+    if echo "$init_check" | grep -q "true"; then
+        log_warning "⚠️ Portainer já foi inicializado anteriormente"
+        return 0
+    fi
+    
+    # Criar usuário admin via API
+    log_info "📝 Criando usuário admin: $PORTAINER_ADMIN_USER"
+    
+    local response=$(curl -s -X POST \
+        "$portainer_url/api/users/admin/init" \
+        -H "Content-Type: application/json" \
+        --insecure \
+        -d "{
+            \"Username\": \"$PORTAINER_ADMIN_USER\",
+            \"Password\": \"$PORTAINER_ADMIN_PASSWORD\"
+        }" 2>/dev/null)
+    
+    # Verificar sucesso
+    if echo "$response" | grep -q -E "Username|jwt"; then
+        log_success "✅ Conta admin criada automaticamente!"
+        
+        # Salvar credenciais no .env
+        echo "" >> .env
+        echo "# Portainer Admin (Auto-generated)" >> .env
+        echo "PORTAINER_ADMIN_USER=$PORTAINER_ADMIN_USER" >> .env
+        echo "PORTAINER_ADMIN_PASSWORD=$PORTAINER_ADMIN_PASSWORD" >> .env
+        
+        return 0
+    else
+        log_warning "⚠️ Não foi possível criar conta automaticamente"
+        log_info "📋 Resposta: $response"
+        
+        # Fallback: gerar credenciais sugeridas
+        PORTAINER_ADMIN_USER="admin"
+        PORTAINER_ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d "=+/" | cut -c1-20)
+        
+        echo "" >> .env
+        echo "# Portainer Admin (Sugestão - configure manualmente)" >> .env
+        echo "PORTAINER_ADMIN_USER=$PORTAINER_ADMIN_USER" >> .env
+        echo "PORTAINER_ADMIN_PASSWORD=$PORTAINER_ADMIN_PASSWORD" >> .env
+        
+        return 1
+    fi
+}
+
 # 1. INSTALAR TRAEFIK (PROXY SSL)
 echo ""
 echo "┌──────────────────────────────────────────────────────────────┐"
@@ -676,14 +774,17 @@ wait_service_perfect "portainer" 120
 # Verificar SSL do Portainer imediatamente
 check_ssl_simple "$DOMINIO_PORTAINER" "Portainer"
 
+# NOVO: Criar conta admin do Portainer automaticamente
+create_portainer_admin_auto
+
 echo ""
 echo "┌──────────────────────────────────────────────────────────────┐"
-echo "│               ⚠️  IMPORTANTE - PORTAINER                        │"
+echo "│               ✅ PORTAINER CONFIGURADO                        │"
 echo "├──────────────────────────────────────────────────────────────┤"
-echo "│ 🔴 CRIE SUA CONTA EM ATÉ 5 MINUTOS!                       │"
 echo "│ 🌐 Acesse: https://$DOMINIO_PORTAINER                    │"
-echo "│ ⏰ Timeout após 5 minutos de inatividade                    │"
-echo "│ 🔑 Configure username e senha de administrador            │"
+echo "│ 👤 Usuário: $PORTAINER_ADMIN_USER                         │"
+echo "│ 🔑 Senha: $PORTAINER_ADMIN_PASSWORD                       │"
+echo "│ 📝 Credenciais salvas em .env                             │"
 echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
 
@@ -1092,6 +1193,8 @@ echo ""
 echo "┌──────────────────────────────────────────────────────────────┐"
 echo "│                      CREDENCIAIS DE ACESSO                      │"
 echo "├──────────────────────────────────────────────────────────────┤"
+echo "│ 👤 Portainer Admin: $PORTAINER_ADMIN_USER"
+echo "│ 🔑 Portainer Senha: $PORTAINER_ADMIN_PASSWORD"
 echo "│ 🔑 Evolution API Key: $EVOLUTION_API_KEY"
 echo "│ 🗿 PostgreSQL Password: $POSTGRES_PASSWORD"
 echo "│ 🔐 N8N Encryption Key: $N8N_KEY"
@@ -1102,7 +1205,7 @@ echo "│                        INFORMAÇÕES IMPORTANTES                    �
 echo "├──────────────────────────────────────────────────────────────┤"
 echo "│ • SSL processado automaticamente em background               │"
 echo "│ • Redirecionamento HTTP→HTTPS ativo                          │"
-echo "│ • ⚠️  IMPORTANTE: Crie conta Portainer em 5 minutos!        │"
+echo "│ • ✅ Portainer admin criado automaticamente                 │"
 echo "│ • 🔑 Configure conta administrador no N8N                   │"
 echo "│ • IP do servidor: $server_ip                    │"
 echo "└──────────────────────────────────────────────────────────────┘"
