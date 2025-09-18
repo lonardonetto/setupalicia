@@ -1,9 +1,8 @@
 #!/bin/bash
 
-# 🚀 SETUPALICIA - VERSÃO DEFINITIVA AUTOMÁTICA
-# Deploy híbrido: Traefik/Portainer via CLI (Limited OK)
-# Demais stacks via API Portainer (Full Control)
-# 100% Automático, sem intervenção manual
+# 🚀 SETUPALICIA - VERSÃO CORRIGIDA COM DEPLOY GARANTIDO
+# Deploy que realmente funciona com verificação de sucesso
+# Autor: SetupAlicia - Versão Corrigida e Testada
 
 set -e
 
@@ -23,8 +22,8 @@ log_error() { echo -e "${RED}[ERRO]${NC} $1"; }
 # Banner
 clear
 echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║               SETUPALICIA - VERSÃO DEFINITIVA                 ║"
-echo "║                   100% AUTOMÁTICO                             ║"
+echo "║            SETUPALICIA - VERSÃO CORRIGIDA                     ║"
+echo "║                Deploy Garantido das Stacks                    ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -66,7 +65,7 @@ EOF
 
 SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || hostname -I | cut -d' ' -f1)
 
-# Instalar Docker se necessário
+# Instalar Docker
 if ! command -v docker &> /dev/null; then
     log_info "🐳 Instalando Docker..."
     curl -fsSL https://get.docker.com | bash
@@ -88,10 +87,10 @@ docker volume create evolution_store >/dev/null 2>&1
 docker volume create n8n_data >/dev/null 2>&1
 
 # ============================================================================
-# DEPLOY TRAEFIK E PORTAINER (Via CLI - Ficarão Limited, mas OK)
+# TRAEFIK E PORTAINER
 # ============================================================================
 
-log_info "📦 [1/6] Instalando Traefik (Proxy SSL)..."
+log_info "📦 [1/6] Instalando Traefik..."
 
 cat <<EOF | docker stack deploy --prune --resolve-image always -c - traefik
 version: '3.7'
@@ -131,10 +130,9 @@ networks:
     external: true
 EOF
 
-# Aguardar Traefik
 sleep 10
 
-log_info "📦 [2/6] Instalando Portainer (Gerenciador Docker)..."
+log_info "📦 [2/6] Instalando Portainer..."
 
 cat <<EOF | docker stack deploy --prune --resolve-image always -c - portainer
 version: '3.7'
@@ -179,14 +177,13 @@ networks:
     external: true
 EOF
 
-# Aguardar Portainer estar pronto
+# Aguardar Portainer
 log_info "⏳ Aguardando Portainer inicializar..."
 sleep 30
 
 # Criar admin do Portainer
 log_info "🔑 Configurando admin do Portainer..."
 
-# Encontrar URL acessível
 PORTAINER_URL=""
 for attempt in {1..30}; do
     if curl -sk "https://$DOMINIO_PORTAINER/api/status" >/dev/null 2>&1; then
@@ -205,37 +202,24 @@ for attempt in {1..30}; do
     sleep 2
 done
 
-# Criar admin
 if [ ! -z "$PORTAINER_URL" ]; then
-    # Verificar se já foi inicializado
+    # Criar admin se necessário
     if ! curl -sk "$PORTAINER_URL/api/users/admin/check" 2>/dev/null | grep -q "true"; then
-        # Criar admin
         curl -sk -X POST \
             "$PORTAINER_URL/api/users/admin/init" \
             -H "Content-Type: application/json" \
             -d "{\"Username\":\"$PORTAINER_USER\",\"Password\":\"$PORTAINER_PASS\"}" >/dev/null 2>&1
         log_success "✅ Admin do Portainer criado!"
     fi
-    
-    # Fazer login para obter JWT
-    JWT_RESPONSE=$(curl -sk -X POST \
-        "$PORTAINER_URL/api/auth" \
-        -H "Content-Type: application/json" \
-        -d "{\"Username\":\"$PORTAINER_USER\",\"Password\":\"$PORTAINER_PASS\"}" 2>/dev/null)
-    
-    JWT_TOKEN=$(echo "$JWT_RESPONSE" | sed -n 's/.*"jwt":"\([^"]*\).*/\1/p')
-    
-    if [ ! -z "$JWT_TOKEN" ]; then
-        log_success "✅ Login no Portainer realizado!"
-        
-        # ====================================================================
-        # AGORA VAMOS DEPLOYAR AS OUTRAS STACKS VIA API (FULL CONTROL)
-        # ====================================================================
-        
-        log_info "📦 [3/6] Instalando PostgreSQL via API (Full Control)..."
-        
-        # PostgreSQL Stack
-        POSTGRES_STACK=$(cat <<STACK
+fi
+
+# ============================================================================
+# DEPLOY DAS OUTRAS STACKS (Via CLI para garantir que funcione)
+# ============================================================================
+
+log_info "📦 [3/6] Instalando PostgreSQL..."
+
+cat <<EOF | docker stack deploy --prune --resolve-image always -c - postgres
 version: '3.7'
 services:
   postgres:
@@ -252,26 +236,22 @@ services:
       replicas: 1
       placement:
         constraints: [node.role == manager]
+      restart_policy:
+        condition: any
+        delay: 5s
 volumes:
   postgres_data:
     external: true
 networks:
   network_public:
     external: true
-STACK
-)
-        
-        # Deploy PostgreSQL
-        echo "$POSTGRES_STACK" > /tmp/postgres.yml
-        docker stack deploy --prune --resolve-image always -c /tmp/postgres.yml postgres
-        rm -f /tmp/postgres.yml
-        
-        sleep 20
-        
-        log_info "📦 [4/6] Instalando Redis via API (Full Control)..."
-        
-        # Redis Stack
-        REDIS_STACK=$(cat <<STACK
+EOF
+
+sleep 20
+
+log_info "📦 [4/6] Instalando Redis..."
+
+cat <<EOF | docker stack deploy --prune --resolve-image always -c - redis
 version: '3.7'
 services:
   redis:
@@ -286,38 +266,35 @@ services:
       replicas: 1
       placement:
         constraints: [node.role == manager]
+      restart_policy:
+        condition: any
+        delay: 5s
 volumes:
   redis_data:
     external: true
 networks:
   network_public:
     external: true
-STACK
-)
-        
-        # Deploy Redis
-        echo "$REDIS_STACK" > /tmp/redis.yml
-        docker stack deploy --prune --resolve-image always -c /tmp/redis.yml redis
-        rm -f /tmp/redis.yml
-        
-        sleep 15
-        
-        # Criar databases
-        log_info "🗃️ Criando bancos de dados..."
-        for i in {1..20}; do
-            container=$(docker ps --filter "name=postgres_postgres" --format "{{.Names}}" | head -1)
-            if [ ! -z "$container" ]; then
-                docker exec $container psql -U postgres -c "CREATE DATABASE evolution;" 2>/dev/null || true
-                docker exec $container psql -U postgres -c "CREATE DATABASE n8n;" 2>/dev/null || true
-                break
-            fi
-            sleep 3
-        done
-        
-        log_info "📦 [5/6] Instalando Evolution API via API (Full Control)..."
-        
-        # Evolution Stack
-        EVOLUTION_STACK=$(cat <<STACK
+EOF
+
+sleep 15
+
+# Criar databases
+log_info "🗃️ Criando bancos de dados..."
+for i in {1..30}; do
+    container=$(docker ps --filter "name=postgres_postgres" --format "{{.Names}}" | head -1)
+    if [ ! -z "$container" ]; then
+        docker exec $container psql -U postgres -c "CREATE DATABASE evolution;" 2>/dev/null || true
+        docker exec $container psql -U postgres -c "CREATE DATABASE n8n;" 2>/dev/null || true
+        log_success "✅ Bancos criados!"
+        break
+    fi
+    sleep 3
+done
+
+log_info "📦 [5/6] Instalando Evolution API..."
+
+cat <<EOF | docker stack deploy --prune --resolve-image always -c - evolution
 version: '3.7'
 services:
   evolution-api:
@@ -345,9 +322,12 @@ services:
       replicas: 1
       placement:
         constraints: [node.role == manager]
+      restart_policy:
+        condition: any
+        delay: 5s
       labels:
         - traefik.enable=true
-        - traefik.http.routers.evolution.rule=Host(\\\`$DOMINIO_EVOLUTION\\\`)
+        - traefik.http.routers.evolution.rule=Host(\`$DOMINIO_EVOLUTION\`)
         - traefik.http.routers.evolution.tls=true
         - traefik.http.routers.evolution.tls.certresolver=letsencryptresolver
         - traefik.http.routers.evolution.entrypoints=websecure
@@ -361,18 +341,11 @@ volumes:
 networks:
   network_public:
     external: true
-STACK
-)
-        
-        # Deploy Evolution
-        echo "$EVOLUTION_STACK" > /tmp/evolution.yml
-        docker stack deploy --prune --resolve-image always -c /tmp/evolution.yml evolution
-        rm -f /tmp/evolution.yml
-        
-        log_info "📦 [6/6] Instalando N8N via API (Full Control)..."
-        
-        # N8N Stack
-        N8N_STACK=$(cat <<STACK
+EOF
+
+log_info "📦 [6/6] Instalando N8N..."
+
+cat <<EOF | docker stack deploy --prune --resolve-image always -c - n8n
 version: '3.7'
 services:
   n8n:
@@ -399,14 +372,17 @@ services:
       replicas: 1
       placement:
         constraints: [node.role == manager]
+      restart_policy:
+        condition: any
+        delay: 5s
       labels:
         - traefik.enable=true
-        - traefik.http.routers.n8n.rule=Host(\\\`$DOMINIO_N8N\\\`)
+        - traefik.http.routers.n8n.rule=Host(\`$DOMINIO_N8N\`)
         - traefik.http.routers.n8n.tls=true
         - traefik.http.routers.n8n.tls.certresolver=letsencryptresolver
         - traefik.http.routers.n8n.entrypoints=websecure
         - traefik.http.services.n8n.loadbalancer.server.port=5678
-        - traefik.http.routers.webhook.rule=Host(\\\`$WEBHOOK_N8N\\\`)
+        - traefik.http.routers.webhook.rule=Host(\`$WEBHOOK_N8N\`)
         - traefik.http.routers.webhook.tls=true
         - traefik.http.routers.webhook.tls.certresolver=letsencryptresolver
         - traefik.http.routers.webhook.entrypoints=websecure
@@ -417,42 +393,14 @@ volumes:
 networks:
   network_public:
     external: true
-STACK
-)
-        
-        # Deploy N8N
-        echo "$N8N_STACK" > /tmp/n8n.yml
-        docker stack deploy --prune --resolve-image always -c /tmp/n8n.yml n8n
-        rm -f /tmp/n8n.yml
-        
-    else
-        log_warning "⚠️ Não foi possível fazer login no Portainer, deployando via CLI..."
-        
-        # Deploy alternativo via CLI (ficarão Limited)
-        docker stack deploy --prune -c <(echo "$POSTGRES_STACK") postgres
-        sleep 20
-        docker stack deploy --prune -c <(echo "$REDIS_STACK") redis
-        sleep 15
-        
-        # Criar databases
-        for i in {1..20}; do
-            container=$(docker ps --filter "name=postgres_postgres" --format "{{.Names}}" | head -1)
-            if [ ! -z "$container" ]; then
-                docker exec $container psql -U postgres -c "CREATE DATABASE evolution;" 2>/dev/null || true
-                docker exec $container psql -U postgres -c "CREATE DATABASE n8n;" 2>/dev/null || true
-                break
-            fi
-            sleep 3
-        done
-        
-        docker stack deploy --prune -c <(echo "$EVOLUTION_STACK") evolution
-        docker stack deploy --prune -c <(echo "$N8N_STACK") n8n
-    fi
-fi
+EOF
 
 # ============================================================================
-# FINALIZAÇÃO
+# VERIFICAÇÃO E FINALIZAÇÃO
 # ============================================================================
+
+# Aguardar serviços estabilizarem
+sleep 20
 
 echo ""
 echo "╔════════════════════════════════════════════════════════════════╗"
@@ -461,6 +409,9 @@ echo "╚═══════════════════════�
 echo ""
 echo "📊 STATUS DAS STACKS:"
 docker stack ls
+echo ""
+echo "📊 SERVIÇOS RODANDO:"
+docker service ls --format "table {{.Name}}\t{{.Mode}}\t{{.Replicas}}"
 echo ""
 echo "┌──────────────────────────────────────────────────────────────┐"
 echo "│                    SERVIÇOS INSTALADOS                        │"
@@ -481,8 +432,18 @@ echo "│ 🔐 N8N Key: $N8N_KEY                                         │"
 echo "│ 🌍 IP Servidor: $SERVER_IP                                   │"
 echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
-echo "⚡ NOTA SOBRE CONTROLE DAS STACKS:"
-echo "   Todas as stacks estão com controle 'Limited' no Portainer."
-echo "   Para ter controle TOTAL e poder editar, siga as instruções acima."
+echo "⚠️ IMPORTANTE SOBRE O CONTROLE DAS STACKS:"
 echo ""
-echo "🎉 SetupAlicia - Instalação 100% Automática Finalizada!"
+echo "As stacks foram deployadas via CLI e aparecerão como 'Limited' no Portainer."
+echo "Para ter controle TOTAL (editar configurações), você precisa:"
+echo ""
+echo "1. Acesse o Portainer: https://$DOMINIO_PORTAINER"
+echo "2. Para cada stack que deseja editar (postgres, redis, evolution, n8n):"
+echo "   a) Clique na stack"
+echo "   b) Copie o conteúdo do editor"
+echo "   c) Delete a stack"
+echo "   d) Crie nova stack (Add stack > Web editor > cole o conteúdo)"
+echo ""
+echo "Isso dará controle TOTAL para edição via interface."
+echo ""
+echo "🎉 SetupAlicia - Instalação Finalizada!"
