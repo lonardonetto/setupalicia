@@ -710,7 +710,7 @@ log_info "📦 Atualizando sistema..."
 {
     apt update -y &&
     apt upgrade -y &&
-    apt-get install -y curl wget gnupg lsb-release ca-certificates apt-transport-https software-properties-common
+    apt-get install -y curl wget gnupg lsb-release ca-certificates apt-transport-https software-properties-common jq
 } >> instalacao_corrigida.log 2>&1
 
 # Aguardar liberação do lock do apt
@@ -879,30 +879,51 @@ deploy_via_portainer_api() {
     docker stack rm "$stack_name" >/dev/null 2>&1 || true
     sleep 10
     
-    # Ler conteúdo do arquivo
+    # Ler conteúdo do arquivo e escapar para JSON
     local stack_content=$(cat "$yaml_file")
     
-    # Criar payload para API
-    local json_payload=$(cat <<JSON
-{
-    "Name": "$stack_name",
-    "SwarmID": "primary",
-    "StackFileContent": $(echo "$stack_content" | python3 -c "import sys, json; print(json.dumps(sys.stdin.read()))" 2>/dev/null || echo "\"$stack_content\"\n" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | tr -d '\n')
-}
-JSON
-)
+    # Escapar conteúdo para JSON usando jq se disponível
+    local escaped_content
+    if command -v jq >/dev/null 2>&1; then
+        escaped_content=$(echo "$stack_content" | jq -Rs .)
+    else
+        # Fallback manual para escapar JSON
+        escaped_content=$(echo "$stack_content" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/^/"/' | sed 's/$/"/')
+    fi
+    
+    # Obter endpoint ID correto
+    local endpoint_response=$(curl -sk -H "Authorization: Bearer $jwt_token" "$portainer_url/api/endpoints" 2>/dev/null)
+    local endpoint_id=$(echo "$endpoint_response" | sed -n 's/.*"Id":\([0-9]*\).*/\1/p' | head -1)
+    
+    if [ -z "$endpoint_id" ]; then
+        endpoint_id=1
+    fi
+    
+    # Criar payload JSON
+    local json_payload="{
+        \"Name\": \"$stack_name\",
+        \"SwarmID\": \"primary\",
+        \"StackFileContent\": $escaped_content
+    }"
+    
+    # Debug: mostrar payload (apenas primeiras linhas)
+    echo "Payload (primeiras linhas):" | head -3
     
     # Deploy via API
     local response=$(curl -sk -X POST \
-        "$portainer_url/api/stacks?type=1&method=string&endpointId=1" \
+        "$portainer_url/api/stacks?type=1&method=string&endpointId=$endpoint_id" \
         -H "Authorization: Bearer $jwt_token" \
         -H "Content-Type: application/json" \
         -d "$json_payload" 2>&1)
     
-    if echo "$response" | grep -q "\"Id\""; then
+    # Debug: mostrar resposta
+    echo "Resposta da API: $response"
+    
+    if echo "$response" | grep -q "\"Id\"\|\"Name\""; then
         log_success "✅ $stack_name deployada com controle TOTAL!"
         return 0
     else
+        log_warning "⚠️ API falhou. Resposta: $(echo "$response" | head -200)"
         log_warning "⚠️ Fallback: deployando via CLI"
         docker stack deploy --prune --resolve-image always -c "$yaml_file" "$stack_name"
         return 1
