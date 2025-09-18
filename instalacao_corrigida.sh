@@ -465,6 +465,31 @@ networks:
     echo "As stacks agora têm controle TOTAL (Full Control)."
 }
 
+# Função para fazer login no Portainer e obter JWT
+portainer_login() {
+    local portainer_url=$1
+    local username=$2
+    local password=$3
+    
+    # Aguardar um pouco para garantir que o Portainer está pronto
+    sleep 2
+    
+    local response=$(curl -sk -X POST \
+        "$portainer_url/api/auth" \
+        -H "Content-Type: application/json" \
+        -d "{\"Username\":\"$username\",\"Password\":\"$password\"}" \
+        --max-time 10 2>/dev/null)
+    
+    local jwt_token=$(echo "$response" | sed -n 's/.*"jwt":"\([^"]*\).*/\1/p')
+    
+    # Verificar se o token é válido
+    if [ ! -z "$jwt_token" ] && [ ${#jwt_token} -gt 50 ]; then
+        echo "$jwt_token"
+    else
+        echo ""
+    fi
+}
+
 # Função para forçar deploy via API com debug
 forcar_deploy_api_debug() {
     log_warning "🎆 FORÇAR DEPLOY VIA API (DEBUG)"
@@ -924,31 +949,6 @@ check_ssl_simple() {
     fi
     
     log_success "✅ $service_name configurado! Continuando instalação..."
-}
-
-# Função para fazer login no Portainer e obter JWT
-portainer_login() {
-    local portainer_url=$1
-    local username=$2
-    local password=$3
-    
-    # Aguardar um pouco para garantir que o Portainer está pronto
-    sleep 2
-    
-    local response=$(curl -sk -X POST \
-        "$portainer_url/api/auth" \
-        -H "Content-Type: application/json" \
-        -d "{\"Username\":\"$username\",\"Password\":\"$password\"}" \
-        --max-time 10 2>/dev/null)
-    
-    local jwt_token=$(echo "$response" | sed -n 's/.*"jwt":"\([^"]*\).*/\1/p')
-    
-    # Verificar se o token é válido
-    if [ ! -z "$jwt_token" ] && [ ${#jwt_token} -gt 50 ]; then
-        echo "$jwt_token"
-    else
-        echo ""
-    fi
 }
 
 # NOVA ABORDAGEM: Deploy garantido com Full Control
