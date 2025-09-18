@@ -951,7 +951,79 @@ portainer_login() {
     fi
 }
 
-# Função para deploy via API do Portainer (FULL CONTROL)
+# NOVA ABORDAGEM: Deploy garantido com Full Control
+deploy_garantido_full_control() {
+    local stack_name=$1
+    local yaml_file=$2
+    
+    log_info "🚀 Deploy garantido de $stack_name com Full Control..."
+    
+    # 1. Deploy via CLI primeiro (sempre funciona)
+    log_info "Passo 1: Deploy via CLI..."
+    docker stack deploy --prune --resolve-image always -c "$yaml_file" "$stack_name"
+    
+    # 2. Aguardar stack estar ativa
+    sleep 15
+    
+    # 3. Se temos API disponível, converter para Full Control
+    if [ "$USE_PORTAINER_API" = "true" ] && [ ! -z "$JWT_TOKEN" ] && [ ! -z "$PORTAINER_API_URL" ]; then
+        log_info "Passo 2: Convertendo para Full Control via API..."
+        converter_stack_para_full_control "$stack_name" "$yaml_file"
+    else
+        log_info "API não disponível, stack deployada via CLI (Limited)"
+    fi
+}
+
+# Função para converter stack existente para Full Control
+converter_stack_para_full_control() {
+    local stack_name=$1
+    local yaml_file=$2
+    
+    log_info "🔄 Convertendo $stack_name para Full Control..."
+    
+    # Obter informações da stack via API
+    local stacks_response=$(curl -sk -H "Authorization: Bearer $JWT_TOKEN" "$PORTAINER_API_URL/api/stacks" 2>/dev/null)
+    
+    # Verificar se a stack já existe no Portainer
+    if echo "$stacks_response" | grep -q "\"Name\":\"$stack_name\""; then
+        log_success "✅ Stack $stack_name já visível no Portainer!"
+        
+        # Tentar atualizar via API para garantir Full Control
+        local stack_id=$(echo "$stacks_response" | sed -n "s/.*\"Name\":\"$stack_name\".*\"Id\":\([0-9]*\).*/\1/p")
+        if [ ! -z "$stack_id" ]; then
+            log_info "Atualizando stack ID $stack_id..."
+            
+            local stack_content=$(cat "$yaml_file")
+            local escaped_content
+            if command -v jq >/dev/null 2>&1; then
+                escaped_content=$(echo "$stack_content" | jq -Rs .)
+            else
+                escaped_content=$(echo "$stack_content" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/^/"/' | sed 's/$/"/')
+            fi
+            
+            local update_payload="{
+                \"StackFileContent\": $escaped_content,
+                \"Env\": []
+            }"
+            
+            local update_response=$(curl -sk -X PUT \
+                "$PORTAINER_API_URL/api/stacks/$stack_id?endpointId=1" \
+                -H "Authorization: Bearer $JWT_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "$update_payload" 2>/dev/null)
+            
+            if echo "$update_response" | grep -q "\"Id\""; then
+                log_success "✅ $stack_name convertida para Full Control!"
+                return 0
+            fi
+        fi
+    fi
+    
+    log_warning "⚠️ $stack_name permanece Limited (mas funcional)"
+    return 1
+}
+
+# Função original mantida para debug
 deploy_via_portainer_api() {
     local stack_name=$1
     local yaml_file=$2
@@ -959,6 +1031,11 @@ deploy_via_portainer_api() {
     local jwt_token=$4
     
     log_info "🚀 Deployando $stack_name via API do Portainer (Full Control)..."
+    
+    # Verificar versão da API do Portainer
+    local version_info=$(curl -sk -H "Authorization: Bearer $jwt_token" "$portainer_url/api/status" 2>/dev/null)
+    local version=$(echo "$version_info" | sed -n 's/.*"Version":"\([^"]*\).*/\1/p')
+    echo "Versão do Portainer: $version"
     
     # Remover stack existente se houver
     docker stack rm "$stack_name" >/dev/null 2>&1 || true
@@ -976,7 +1053,7 @@ deploy_via_portainer_api() {
         escaped_content=$(echo "$stack_content" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/^/"/' | sed 's/$/"/')
     fi
     
-    # Obter endpoint ID correto
+    # Obter endpoint ID correto e informações do Swarm
     local endpoint_response=$(curl -sk -H "Authorization: Bearer $jwt_token" "$portainer_url/api/endpoints" 2>/dev/null)
     local endpoint_id=$(echo "$endpoint_response" | sed -n 's/.*"Id":\([0-9]*\).*/\1/p' | head -1)
     
@@ -984,11 +1061,20 @@ deploy_via_portainer_api() {
         endpoint_id=1
     fi
     
-    # Criar payload JSON
+    # Verificar se é um endpoint Swarm
+    local swarm_info=$(curl -sk -H "Authorization: Bearer $jwt_token" "$portainer_url/api/endpoints/$endpoint_id/docker/swarm" 2>/dev/null)
+    local swarm_id=$(echo "$swarm_info" | sed -n 's/.*"ID":"\([^"]*\).*/\1/p')
+    
+    if [ -z "$swarm_id" ]; then
+        swarm_id="primary"
+    fi
+    
+    # Criar payload JSON correto
     local json_payload="{
         \"Name\": \"$stack_name\",
-        \"SwarmID\": \"primary\",
-        \"StackFileContent\": $escaped_content
+        \"SwarmID\": \"$swarm_id\",
+        \"StackFileContent\": $escaped_content,
+        \"Env\": []
     }"
     
     # Testar se o token ainda é válido e renovar se necessário
@@ -1014,12 +1100,24 @@ deploy_via_portainer_api() {
     echo "URL: $portainer_url/api/stacks?type=1&method=string&endpointId=$endpoint_id"
     echo "Tamanho do payload: $(echo "$json_payload" | wc -c) caracteres"
     
-    # Deploy via API
+    # Deploy via API usando endpoint correto
+    local api_url="$portainer_url/api/stacks"
     local response=$(curl -sk -X POST \
-        "$portainer_url/api/stacks?type=1&method=string&endpointId=$endpoint_id" \
+        "$api_url?type=1&method=string&endpointId=$endpoint_id" \
         -H "Authorization: Bearer $jwt_token" \
         -H "Content-Type: application/json" \
         -d "$json_payload" 2>&1)
+    
+    # Se falhar, tentar endpoint alternativo
+    if [ -z "$response" ] || echo "$response" | grep -q "405\|404"; then
+        log_info "Tentando endpoint alternativo..."
+        api_url="$portainer_url/api/stacks/create/swarm/string"
+        response=$(curl -sk -X POST \
+            "$api_url?endpointId=$endpoint_id" \
+            -H "Authorization: Bearer $jwt_token" \
+            -H "Content-Type: application/json" \
+            -d "$json_payload" 2>&1)
+    fi
     
     # Debug: mostrar resposta
     echo "Status HTTP: $(curl -sk -o /dev/null -w '%{http_code}' -X POST "$portainer_url/api/stacks?type=1&method=string&endpointId=$endpoint_id" -H "Authorization: Bearer $jwt_token" -H "Content-Type: application/json" -d "$json_payload" 2>/dev/null)"
@@ -1378,12 +1476,8 @@ EOF
 
 docker volume create postgres_data >/dev/null 2>&1
 
-# Tentar deploy via API do Portainer para ter Full Control
-if [ "$USE_PORTAINER_API" = "true" ] && [ ! -z "$JWT_TOKEN" ]; then
-    deploy_via_portainer_api "postgres" "postgres_corrigido.yaml" "$PORTAINER_API_URL" "$JWT_TOKEN"
-else
-    docker stack deploy --prune --resolve-image always -c postgres_corrigido.yaml postgres
-fi
+# Deploy garantido com tentativa de Full Control
+deploy_garantido_full_control "postgres" "postgres_corrigido.yaml"
 wait_service_perfect "postgres" 180
 
 # 4. INSTALAR REDIS
@@ -1426,12 +1520,8 @@ EOF
 
 docker volume create redis_data >/dev/null 2>&1
 
-# Tentar deploy via API do Portainer para ter Full Control
-if [ "$USE_PORTAINER_API" = "true" ] && [ ! -z "$JWT_TOKEN" ]; then
-    deploy_via_portainer_api "redis" "redis_corrigido.yaml" "$PORTAINER_API_URL" "$JWT_TOKEN"
-else
-    docker stack deploy --prune --resolve-image always -c redis_corrigido.yaml redis
-fi
+# Deploy garantido com tentativa de Full Control
+deploy_garantido_full_control "redis" "redis_corrigido.yaml"
 wait_service_perfect "redis" 120
 
 # Aguardar bancos estabilizarem
@@ -1566,12 +1656,8 @@ EOF
 docker volume create evolution_instances >/dev/null 2>&1
 docker volume create evolution_store >/dev/null 2>&1
 
-# Tentar deploy via API do Portainer para ter Full Control
-if [ "$USE_PORTAINER_API" = "true" ] && [ ! -z "$JWT_TOKEN" ]; then
-    deploy_via_portainer_api "evolution" "evolution_corrigido.yaml" "$PORTAINER_API_URL" "$JWT_TOKEN"
-else
-    docker stack deploy --prune --resolve-image always -c evolution_corrigido.yaml evolution
-fi
+# Deploy garantido com tentativa de Full Control
+deploy_garantido_full_control "evolution" "evolution_corrigido.yaml"
 wait_service_perfect "evolution" 300
 
 # Verificar SSL do Evolution imediatamente
@@ -1673,12 +1759,8 @@ EOF
 
 docker volume create n8n_data >/dev/null 2>&1
 
-# Tentar deploy via API do Portainer para ter Full Control
-if [ "$USE_PORTAINER_API" = "true" ] && [ ! -z "$JWT_TOKEN" ]; then
-    deploy_via_portainer_api "n8n" "n8n_corrigida.yaml" "$PORTAINER_API_URL" "$JWT_TOKEN"
-else
-    docker stack deploy --prune --resolve-image always -c n8n_corrigida.yaml n8n
-fi
+# Deploy garantido com tentativa de Full Control
+deploy_garantido_full_control "n8n" "n8n_corrigida.yaml"
 wait_service_perfect "n8n" 300
 
 # Verificar SSL do N8N e Webhook imediatamente
