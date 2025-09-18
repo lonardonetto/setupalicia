@@ -37,5 +37,3 @@ dev/
 
 # Docker development
 docker-compose.override.yml
-# Secrets
-.env

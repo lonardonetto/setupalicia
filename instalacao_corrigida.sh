@@ -1,44 +1,44 @@
-﻿#!/bin/bash
+#!/bin/bash
 
-# ðŸš€ SETUPALICIA - MENU COMPLETO + INSTALAÃ‡ÃƒO FUNCIONANDO
-# MantÃ©m o script original que funciona 100% + adiciona funcionalidades extras
-# Autor: Maicon Ramos - AutomaÃ§Ã£o sem Limites
-# VersÃ£o: MENU + ORIGINAL FUNCIONANDO
+# 🚀 SETUPALICIA - MENU COMPLETO + INSTALAÇÃO FUNCIONANDO
+# Mantém o script original que funciona 100% + adiciona funcionalidades extras
+# Autor: Maicon Ramos - Automação sem Limites
+# Versão: MENU + ORIGINAL FUNCIONANDO
 
 set -e
 
-# FunÃ§Ã£o para log colorido
+# Função para log colorido
 log_info() { echo -e "\033[34m[INFO]\033[0m $1"; }
 log_success() { echo -e "\033[32m[SUCESSO]\033[0m $1"; }
 log_warning() { echo -e "\033[33m[AVISO]\033[0m $1"; }
 log_error() { echo -e "\033[31m[ERRO]\033[0m $1"; }
 
-# FunÃ§Ã£o para confirmaÃ§Ã£o
+# Função para confirmação
 confirmar() {
     local mensagem=$1
     echo ""
-    echo "ðŸ¤” $mensagem"
+    echo "🤔 $mensagem"
     read -p "Digite 'sim' para continuar: " resposta
     if [ "$resposta" != "sim" ]; then
-        log_warning "OperaÃ§Ã£o cancelada."
+        log_warning "Operação cancelada."
         exit 0
     fi
-    log_success "âœ… Confirmado! Continuando..."
+    log_success "✅ Confirmado! Continuando..."
     echo ""
 }
 
-# FunÃ§Ã£o para reset do Portainer
+# Função para reset do Portainer
 reset_portainer() {
-    log_warning "ðŸ”„ RESET DO PORTAINER"
-    echo "Esta operaÃ§Ã£o vai resetar o Portainer (resolve timeout de 5 minutos)"
+    log_warning "🔄 RESET DO PORTAINER"
+    echo "Esta operação vai resetar o Portainer (resolve timeout de 5 minutos)"
     
     confirmar "Deseja resetar o Portainer?"
     
-    # Carregar variÃ¡veis se existirem
+    # Carregar variáveis se existirem
     if [ -f .env ]; then
         source .env
     else
-        read -p "Digite o domÃ­nio do Portainer: " DOMINIO_PORTAINER
+        read -p "Digite o domínio do Portainer: " DOMINIO_PORTAINER
     fi
     
     # Reset do Portainer
@@ -109,30 +109,30 @@ EOF
 
     docker stack deploy --prune --resolve-image always -c portainer_reset.yaml portainer
     
-    log_success "âœ… Portainer resetado! Acesse: https://$DOMINIO_PORTAINER"
-    echo "âš ï¸ Configure senha nos primeiros 5 minutos!"
+    log_success "✅ Portainer resetado! Acesse: https://$DOMINIO_PORTAINER"
+    echo "⚠️ Configure senha nos primeiros 5 minutos!"
 }
 
-# FunÃ§Ã£o para fix SSL especÃ­fico
+# Função para fix SSL específico
 fix_ssl_especifico() {
-    log_warning "ðŸ” FIX SSL ESPECÃFICO"
-    echo "ForForÃ§a certificados SSL para domÃ­nios pendentes"
+    log_warning "🔐 FIX SSL ESPECÍFICO"
+    echo "ForForça certificados SSL para domínios pendentes"
     
     confirmar "Executar fix SSL?"
     
-    # Carregar domÃ­nios
+    # Carregar domínios
     if [ -f .env ]; then
         source .env
     else
-        read -p "Digite domÃ­nio Portainer: " DOMINIO_PORTAINER
-        read -p "Digite domÃ­nio N8N: " DOMINIO_N8N
-        read -p "Digite domÃ­nio Evolution: " DOMINIO_EVOLUTION
-        read -p "Digite domÃ­nio Webhook: " WEBHOOK_N8N
+        read -p "Digite domínio Portainer: " DOMINIO_PORTAINER
+        read -p "Digite domínio N8N: " DOMINIO_N8N
+        read -p "Digite domínio Evolution: " DOMINIO_EVOLUTION
+        read -p "Digite domínio Webhook: " WEBHOOK_N8N
     fi
     
     server_ip=$(curl -s ifconfig.me 2>/dev/null || hostname -I | cut -d' ' -f1)
     
-    # ForÃ§ar SSL para cada domÃ­nio usando funÃ§Ã£o simples
+    # Forçar SSL para cada domínio usando função simples
     for domain in "$DOMINIO_PORTAINER" "$DOMINIO_N8N" "$DOMINIO_EVOLUTION" "$WEBHOOK_N8N"; do
         if [ "$domain" = "$DOMINIO_PORTAINER" ]; then
             check_ssl_simple "$domain" "Portainer"
@@ -149,9 +149,9 @@ fix_ssl_especifico() {
     log_info "Testando SSL final..."
     for domain in "$DOMINIO_PORTAINER" "$DOMINIO_N8N" "$DOMINIO_EVOLUTION" "$WEBHOOK_N8N"; do
         if curl -s -I "https://$domain" --max-time 8 2>/dev/null | grep -q "HTTP.*[2-4][0-9][0-9]"; then
-            log_success "âœ… $domain: SSL OK"
+            log_success "✅ $domain: SSL OK"
         else
-            log_warning "âš ï¸ $domain: SSL pendente"
+            log_warning "⚠️ $domain: SSL pendente"
         fi
     done
 }
@@ -159,62 +159,62 @@ fix_ssl_especifico() {
 # Menu principal
 mostrar_menu() {
     clear
-    echo "â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—"
-    echo "â•‘                        SETUP ALICIA                         â•‘"
-    echo "â•‘                    Menu de InstalaÃ§Ã£o                       â•‘"
-    echo "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║                        SETUP ALICIA                         ║"
+    echo "║                    Menu de Instalação                       ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
     echo ""
-    echo "â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”"
-    echo "â”‚                      OPÃ‡Ã•ES DISPONÃVEIS                        â”‚"
-    echo "â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤"
-    echo "â”‚ 1) ðŸ“¦ InstalaÃ§Ã£o Completa                                â”‚"
-    echo "â”‚    Instala todos os serviÃ§os (Traefik, Portainer, etc)      â”‚"
-    echo "â”‚                                                              â”‚"
-    echo "â”‚ 2) ðŸ”„ Reset Portainer                                     â”‚"
-    echo "â”‚    Resolve problema de timeout de 5 minutos               â”‚"
-    echo "â”‚                                                              â”‚"
-    echo "â”‚ 3) ðŸ” Fix SSL                                              â”‚"
-    echo "â”‚    ForÃ§a geraÃ§Ã£o de certificados pendentes               â”‚"
-    echo "â”‚                                                              â”‚"
-    echo "â”‚ 4) ðŸ“Š Status dos ServiÃ§os                                  â”‚"
-    echo "â”‚    Mostra status e testa SSL de todos os domÃ­nios          â”‚"
-    echo "â”‚                                                              â”‚"
-    echo "â”‚ 5) âŒ Sair                                                   â”‚"
-    echo "â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜"
+    echo "┌──────────────────────────────────────────────────────────────┐"
+    echo "│                      OPÇÕES DISPONÍVEIS                        │"
+    echo "├──────────────────────────────────────────────────────────────┤"
+    echo "│ 1) 📦 Instalação Completa                                │"
+    echo "│    Instala todos os serviços (Traefik, Portainer, etc)      │"
+    echo "│                                                              │"
+    echo "│ 2) 🔄 Reset Portainer                                     │"
+    echo "│    Resolve problema de timeout de 5 minutos               │"
+    echo "│                                                              │"
+    echo "│ 3) 🔐 Fix SSL                                              │"
+    echo "│    Força geração de certificados pendentes               │"
+    echo "│                                                              │"
+    echo "│ 4) 📊 Status dos Serviços                                  │"
+    echo "│    Mostra status e testa SSL de todos os domínios          │"
+    echo "│                                                              │"
+    echo "│ 5) ❌ Sair                                                   │"
+    echo "└──────────────────────────────────────────────────────────────┘"
     echo ""
 }
 
-# FunÃ§Ã£o de status
+# Função de status
 mostrar_status() {
-    log_info "ðŸ“Š STATUS DOS SERVIÃ‡OS"
+    log_info "📊 STATUS DOS SERVIÇOS"
     
     if docker service ls >/dev/null 2>&1; then
         echo ""
-        echo "ðŸ³ DOCKER SERVICES:"
+        echo "🐳 DOCKER SERVICES:"
         docker service ls
         
         echo ""
-        echo "ðŸ“¦ CONTAINERS:"
+        echo "📦 CONTAINERS:"
         docker ps --format "table {{.Names}}\t{{.Status}}"
         
         if [ -f .env ]; then
             source .env
             echo ""
-            echo "ðŸ” TESTE SSL:"
+            echo "🔐 TESTE SSL:"
             
             for domain in "$DOMINIO_PORTAINER" "$DOMINIO_N8N" "$DOMINIO_EVOLUTION" "$WEBHOOK_N8N"; do
                 if [ ! -z "$domain" ]; then
-                    echo -n "ðŸ” $domain... "
+                    echo -n "🔍 $domain... "
                     if curl -s -I "https://$domain" --max-time 8 2>/dev/null | grep -q "HTTP.*[2-4][0-9][0-9]"; then
-                        echo "âœ… SSL OK"
+                        echo "✅ SSL OK"
                     else
-                        echo "âŒ SEM SSL"
+                        echo "❌ SEM SSL"
                     fi
                 fi
             done
         fi
     else
-        log_error "Docker Swarm nÃ£o ativo ou sem serviÃ§os"
+        log_error "Docker Swarm não ativo ou sem serviços"
     fi
     
     echo ""
@@ -222,25 +222,25 @@ mostrar_status() {
     read
 }
 
-# Verificar se tem parÃ¢metros (modo direto) ou mostrar menu
+# Verificar se tem parâmetros (modo direto) ou mostrar menu
 if [ $# -eq 0 ]; then
     # Modo menu interativo
     while true; do
         mostrar_menu
-        read -p "Digite sua opÃ§Ã£o (1-5): " opcao
+        read -p "Digite sua opção (1-5): " opcao
         
         case $opcao in
             1)
-                # Coletar parÃ¢metros para instalaÃ§Ã£o
-                read -p "ðŸ“§ Digite seu email para SSL: " SSL_EMAIL
-                read -p "ðŸ”„ Digite domÃ­nio N8N: " DOMINIO_N8N
-                read -p "ðŸ³ Digite domÃ­nio Portainer: " DOMINIO_PORTAINER
-                read -p "ðŸ”— Digite domÃ­nio Webhook: " WEBHOOK_N8N
-                read -p "ðŸ“± Digite domÃ­nio Evolution: " DOMINIO_EVOLUTION
+                # Coletar parâmetros para instalação
+                read -p "📧 Digite seu email para SSL: " SSL_EMAIL
+                read -p "🔄 Digite domínio N8N: " DOMINIO_N8N
+                read -p "🐳 Digite domínio Portainer: " DOMINIO_PORTAINER
+                read -p "🔗 Digite domínio Webhook: " WEBHOOK_N8N
+                read -p "📱 Digite domínio Evolution: " DOMINIO_EVOLUTION
                 
-                confirmar "Iniciar instalaÃ§Ã£o completa?"
+                confirmar "Iniciar instalação completa?"
                 
-                # Continuar com instalaÃ§Ã£o original (pular menu)
+                # Continuar com instalação original (pular menu)
                 break
                 ;;
             2)
@@ -263,13 +263,13 @@ if [ $# -eq 0 ]; then
                 exit 0
                 ;;
             *)
-                log_error "OpÃ§Ã£o invÃ¡lida!"
+                log_error "Opção inválida!"
                 sleep 2
                 ;;
         esac
     done
 else
-    # Modo direto com parÃ¢metros (funcionamento original)
+    # Modo direto com parâmetros (funcionamento original)
     SSL_EMAIL=$1
     DOMINIO_N8N=$2
     DOMINIO_PORTAINER=$3
@@ -277,85 +277,85 @@ else
     DOMINIO_EVOLUTION=$5
 fi
 
-# CONTINUA COM A INSTALAÃ‡ÃƒO ORIGINAL QUE JÃ FUNCIONA
+# CONTINUA COM A INSTALAÇÃO ORIGINAL QUE JÁ FUNCIONA
 clear
-echo "â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—"
-echo "â•‘                        SETUP ALICIA                         â•‘"
-echo "â•‘              Instalador Automatizado com SSL                â•‘"
-echo "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo "║                        SETUP ALICIA                         ║"
+echo "║              Instalador Automatizado com SSL                ║"
+echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
-echo "ðŸ“¦ AplicaÃ§Ãµes incluÃ­das:"
-echo "   â€¢ Traefik (Proxy SSL automÃ¡tico)"
-echo "   â€¢ Portainer (Interface Docker)"
-echo "   â€¢ PostgreSQL (Banco de dados)"
-echo "   â€¢ Redis (Cache)"
-echo "   â€¢ Evolution API v2.2.3 (WhatsApp)"
-echo "   â€¢ N8N (AutomaÃ§Ã£o)"
+echo "📦 Aplicações incluídas:"
+echo "   • Traefik (Proxy SSL automático)"
+echo "   • Portainer (Interface Docker)"
+echo "   • PostgreSQL (Banco de dados)"
+echo "   • Redis (Cache)"
+echo "   • Evolution API v2.2.3 (WhatsApp)"
+echo "   • N8N (Automação)"
 echo ""
 
-# ValidaÃ§Ã£o rigorosa de parÃ¢metros
+# Validação rigorosa de parâmetros
 if [ -z "$SSL_EMAIL" ]; then
-    read -p "ðŸ“§ Digite seu email para SSL: " SSL_EMAIL
+    read -p "📧 Digite seu email para SSL: " SSL_EMAIL
 fi
 
 if [ -z "$DOMINIO_N8N" ]; then
-    read -p "ðŸ”„ Digite o domÃ­nio para N8N (ex: n8n.seudominio.com): " DOMINIO_N8N
+    read -p "🔄 Digite o domínio para N8N (ex: n8n.seudominio.com): " DOMINIO_N8N
 fi
 
 if [ -z "$DOMINIO_PORTAINER" ]; then
-    read -p "ðŸ³ Digite o domÃ­nio para Portainer (ex: portainer.seudominio.com): " DOMINIO_PORTAINER
+    read -p "🐳 Digite o domínio para Portainer (ex: portainer.seudominio.com): " DOMINIO_PORTAINER
 fi
 
 if [ -z "$WEBHOOK_N8N" ]; then
-    read -p "ðŸ”— Digite o domÃ­nio para Webhook N8N (ex: webhook.seudominio.com): " WEBHOOK_N8N
+    read -p "🔗 Digite o domínio para Webhook N8N (ex: webhook.seudominio.com): " WEBHOOK_N8N
 fi
 
 if [ -z "$DOMINIO_EVOLUTION" ]; then
-    read -p "ðŸ“± Digite o domÃ­nio para Evolution API (ex: evolution.seudominio.com): " DOMINIO_EVOLUTION
+    read -p "📱 Digite o domínio para Evolution API (ex: evolution.seudominio.com): " DOMINIO_EVOLUTION
 fi
 
 # Validar formato de email
 if [[ ! "$SSL_EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-    log_error "Email invÃ¡lido! Por favor, digite um email vÃ¡lido."
+    log_error "Email inválido! Por favor, digite um email válido."
     exit 1
 fi
 
-# Validar domÃ­nios
+# Validar domínios
 for domain in "$DOMINIO_N8N" "$DOMINIO_PORTAINER" "$WEBHOOK_N8N" "$DOMINIO_EVOLUTION"; do
     if [[ ! "$domain" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-        log_error "DomÃ­nio invÃ¡lido: $domain"
+        log_error "Domínio inválido: $domain"
         exit 1
     fi
 done
 
-log_success "âœ… ParÃ¢metros validados!"
+log_success "✅ Parâmetros validados!"
 echo ""
-echo "â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”"
-echo "â”‚                 CONFIGURAÃ‡ÃƒO VALIDADA                  â”‚"
-echo "â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤"
-echo "â”‚ ðŸ“§ Email: $SSL_EMAIL"
-echo "â”‚ ðŸ”„ N8N: $DOMINIO_N8N"  
-echo "â”‚ ðŸ³ Portainer: $DOMINIO_PORTAINER"
-echo "â”‚ ðŸ”— Webhook: $WEBHOOK_N8N"
-echo "â”‚ ðŸ“± Evolution: $DOMINIO_EVOLUTION"
-echo "â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜"
+echo "┌─────────────────────────────────────────────────────────┐"
+echo "│                 CONFIGURAÇÃO VALIDADA                  │"
+echo "├─────────────────────────────────────────────────────────┤"
+echo "│ 📧 Email: $SSL_EMAIL"
+echo "│ 🔄 N8N: $DOMINIO_N8N"  
+echo "│ 🐳 Portainer: $DOMINIO_PORTAINER"
+echo "│ 🔗 Webhook: $WEBHOOK_N8N"
+echo "│ 📱 Evolution: $DOMINIO_EVOLUTION"
+echo "└─────────────────────────────────────────────────────────┘"
 echo ""
 
 # Verificar conectividade com a internet
-log_info "ðŸŒ Verificando conectividade com a internet..."
+log_info "🌐 Verificando conectividade com a internet..."
 if ! ping -c 1 google.com >/dev/null 2>&1; then
-    log_error "âŒ Sem conexÃ£o com a internet!"
+    log_error "❌ Sem conexão com a internet!"
     exit 1
 fi
-log_success "âœ… Internet funcionando!"
+log_success "✅ Internet funcionando!"
 
 # Gerar chaves seguras
-log_info "ðŸ” Gerando chaves de seguranÃ§a..."
+log_info "🔐 Gerando chaves de segurança..."
 N8N_KEY=$(openssl rand -hex 16)
 POSTGRES_PASSWORD=$(openssl rand -base64 12 | tr -d "=+/" | cut -c1-12)
 EVOLUTION_API_KEY=$(openssl rand -hex 32)
 
-# Salvar variÃ¡veis de ambiente
+# Salvar variáveis de ambiente
 cat > .env <<EOF
 SSL_EMAIL=$SSL_EMAIL
 DOMINIO_N8N=$DOMINIO_N8N
@@ -367,37 +367,37 @@ POSTGRES_PASSWORD=$POSTGRES_PASSWORD
 EVOLUTION_API_KEY=$EVOLUTION_API_KEY
 EOF
 
-log_success "âœ… VariÃ¡veis salvas em .env"
+log_success "✅ Variáveis salvas em .env"
 
-# ConfiguraÃ§Ã£o do sistema
-log_info "âš™ï¸ Configurando sistema..."
+# Configuração do sistema
+log_info "⚙️ Configurando sistema..."
 export DEBIAN_FRONTEND=noninteractive
 timedatectl set-timezone America/Sao_Paulo
 
 # Verificar e configurar firewall
-log_info "ðŸ”¥ Configurando firewall..."
+log_info "🔥 Configurando firewall..."
 if command -v ufw >/dev/null 2>&1; then
     ufw allow 22/tcp >/dev/null 2>&1 || true
     ufw allow 80/tcp >/dev/null 2>&1 || true
     ufw allow 443/tcp >/dev/null 2>&1 || true
-    log_success "âœ… Firewall configurado!"
+    log_success "✅ Firewall configurado!"
 fi
 
 # Atualizar sistema
-log_info "ðŸ“¦ Atualizando sistema..."
+log_info "📦 Atualizando sistema..."
 {
     apt update -y &&
     apt upgrade -y &&
     apt-get install -y curl wget gnupg lsb-release ca-certificates apt-transport-https software-properties-common
 } >> instalacao_corrigida.log 2>&1
 
-# Aguardar liberaÃ§Ã£o do lock do apt
+# Aguardar liberação do lock do apt
 while fuser /var/lib/dpkg/lock >/dev/null 2>&1; do
     sleep 5
 done
 
-# Configurar swap se necessÃ¡rio
-log_info "ðŸ’¾ Configurando swap..."
+# Configurar swap se necessário
+log_info "💾 Configurando swap..."
 if [ ! -f /swapfile ]; then
     fallocate -l 4G /swapfile
     chmod 600 /swapfile
@@ -407,17 +407,17 @@ if [ ! -f /swapfile ]; then
 fi
 
 # Configurar hostname
-log_info "ðŸ·ï¸ Configurando hostname..."
+log_info "🏷️ Configurando hostname..."
 hostnamectl set-hostname manager1
 sed -i "s/127.0.0.1.*/127.0.0.1 manager1/" /etc/hosts
 
 # Remover Docker antigo se existir
-log_info "ðŸ§¹ Removendo instalaÃ§Ãµes antigas do Docker..."
+log_info "🧹 Removendo instalações antigas do Docker..."
 systemctl stop docker >/dev/null 2>&1 || true
 apt-get remove -y docker docker-engine docker.io containerd runc >/dev/null 2>&1 || true
 
 # Instalar Docker mais recente
-log_info "ðŸ‹ Instalando Docker mais recente..."
+log_info "🐋 Instalando Docker mais recente..."
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
 echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
@@ -429,17 +429,17 @@ systemctl enable docker
 systemctl start docker
 
 # Aguardar Docker inicializar
-log_info "â³ Aguardando Docker inicializar..."
+log_info "⏳ Aguardando Docker inicializar..."
 for i in {1..30}; do
     if docker ps >/dev/null 2>&1; then
-        log_success "âœ… Docker funcionando!"
+        log_success "✅ Docker funcionando!"
         break
     fi
     sleep 2
 done
 
-# Configurar Docker Swarm com mÃ©todo mais robusto
-log_info "ðŸ”§ Configurando Docker Swarm..."
+# Configurar Docker Swarm com método mais robusto
+log_info "🔧 Configurando Docker Swarm..."
 
 # Detectar IP do servidor
 server_ip=$(curl -s ifconfig.me || curl -s icanhazip.com || hostname -I | cut -d' ' -f1)
@@ -450,36 +450,36 @@ docker swarm leave --force >/dev/null 2>&1 || true
 
 # Inicializar novo Swarm
 if docker swarm init --advertise-addr $server_ip >/dev/null 2>&1; then
-    log_success "âœ… Docker Swarm inicializado!"
+    log_success "✅ Docker Swarm inicializado!"
 else
-    log_warning "âš ï¸ Tentando mÃ©todo alternativo..."
+    log_warning "⚠️ Tentando método alternativo..."
     docker swarm init >/dev/null 2>&1
-    log_success "âœ… Docker Swarm inicializado (mÃ©todo alternativo)!"
+    log_success "✅ Docker Swarm inicializado (método alternativo)!"
 fi
 
 # Aguardar Swarm estabilizar
 sleep 10
 
-# Verificar se Swarm estÃ¡ funcionando
+# Verificar se Swarm está funcionando
 if docker node ls >/dev/null 2>&1; then
-    log_success "âœ… Docker Swarm funcionando corretamente!"
+    log_success "✅ Docker Swarm funcionando corretamente!"
 else
-    log_error "âŒ Falha no Docker Swarm!"
+    log_error "❌ Falha no Docker Swarm!"
     exit 1
 fi
 
 # Criar rede overlay
-log_info "ðŸŒ Criando rede overlay..."
+log_info "🌐 Criando rede overlay..."
 docker network create --driver=overlay network_public >/dev/null 2>&1 || true
 
-# FunÃ§Ã£o para aguardar serviÃ§o com verificaÃ§Ã£o robusta
+# Função para aguardar serviço com verificação robusta
 wait_service_perfect() {
     local service_name=$1
     local max_wait=${2:-300}
     
-    log_info "â³ Aguardando $service_name..."
+    log_info "⏳ Aguardando $service_name..."
     
-    # Aguardar serviÃ§o aparecer
+    # Aguardar serviço aparecer
     for i in $(seq 1 60); do
         if docker service ls --filter name=$service_name --format "{{.Name}}" | grep -q "$service_name"; then
             break
@@ -490,7 +490,7 @@ wait_service_perfect() {
     # Aguardar container ficar ativo
     for i in $(seq 1 $max_wait); do
         if docker ps --filter "name=$service_name" --format "{{.Names}}" | grep -q "$service_name"; then
-            log_success "âœ… $service_name funcionando!"
+            log_success "✅ $service_name funcionando!"
             return 0
         fi
         
@@ -501,40 +501,40 @@ wait_service_perfect() {
         sleep 1
     done
     
-    log_error "âŒ Timeout aguardando $service_name"
+    log_error "❌ Timeout aguardando $service_name"
     return 1
 }
 
-# FunÃ§Ã£o para verificar SSL de forma simples e rÃ¡pida
+# Função para verificar SSL de forma simples e rápida
 check_ssl_simple() {
     local domain=$1
     local service_name=$2
     
-    log_info "ðŸ” Verificando SSL para $domain ($service_name)..."
+    log_info "🔐 Verificando SSL para $domain ($service_name)..."
     
-    # Aguardar 15 segundos para o serviÃ§o estabilizar
+    # Aguardar 15 segundos para o serviço estabilizar
     sleep 15
     
-    # Fazer uma requisiÃ§Ã£o simples para acionar Let's Encrypt
+    # Fazer uma requisição simples para acionar Let's Encrypt
     curl -s -H "Host: $domain" "http://$server_ip" >/dev/null 2>&1 &
     curl -s -k "https://$domain" >/dev/null 2>&1 &
     
-    # Testar uma vez se SSL jÃ¡ estÃ¡ funcionando
+    # Testar uma vez se SSL já está funcionando
     if curl -s -I "https://$domain" --max-time 5 2>/dev/null | grep -q "HTTP.*[2-4][0-9][0-9]"; then
-        log_success "âœ… SSL jÃ¡ funcionando para $domain!"
+        log_success "✅ SSL já funcionando para $domain!"
     else
-        log_info "ðŸ”„ SSL para $domain serÃ¡ processado em background"
+        log_info "🔄 SSL para $domain será processado em background"
     fi
     
-    log_success "âœ… $service_name configurado! Continuando instalaÃ§Ã£o..."
+    log_success "✅ $service_name configurado! Continuando instalação..."
 }
 
 # 1. INSTALAR TRAEFIK (PROXY SSL)
 echo ""
-echo "â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”"
-echo "â”‚               ETAPA 1/6 - INSTALANDO TRAEFIK                  â”‚"
-echo "â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜"
-log_info "ðŸ” Configurando proxy SSL automÃ¡tico..."
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│               ETAPA 1/6 - INSTALANDO TRAEFIK                  │"
+echo "└──────────────────────────────────────────────────────────────┘"
+log_info "🔐 Configurando proxy SSL automático..."
 
 cat > traefik_corrigido.yaml <<EOF
 version: '3.7'
@@ -597,14 +597,14 @@ docker volume create traefik_letsencrypt >/dev/null 2>&1
 docker stack deploy --prune --resolve-image always -c traefik_corrigido.yaml traefik
 wait_service_perfect "traefik" 120
 
-log_success "âœ… Traefik instalado - Proxy SSL pronto!"
+log_success "✅ Traefik instalado - Proxy SSL pronto!"
 
 # 2. INSTALAR PORTAINER
 echo ""
-echo "â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”"
-echo "â”‚              ETAPA 2/6 - INSTALANDO PORTAINER                 â”‚"
-echo "â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜"
-log_info "ðŸ³ Configurando interface de gerenciamento Docker..."
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│              ETAPA 2/6 - INSTALANDO PORTAINER                 │"
+echo "└──────────────────────────────────────────────────────────────┘"
+log_info "🐳 Configurando interface de gerenciamento Docker..."
 
 cat > portainer_corrigido.yaml <<EOF
 version: '3.7'
@@ -677,22 +677,22 @@ wait_service_perfect "portainer" 120
 check_ssl_simple "$DOMINIO_PORTAINER" "Portainer"
 
 echo ""
-echo "â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”"
-echo "â”‚               âš ï¸  IMPORTANTE - PORTAINER                        â”‚"
-echo "â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤"
-echo "â”‚ ðŸ”´ CRIE SUA CONTA EM ATÃ‰ 5 MINUTOS!                       â”‚"
-echo "â”‚ ðŸŒ Acesse: https://$DOMINIO_PORTAINER                    â”‚"
-echo "â”‚ â° Timeout apÃ³s 5 minutos de inatividade                    â”‚"
-echo "â”‚ ðŸ”‘ Configure username e senha de administrador            â”‚"
-echo "â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜"
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│               ⚠️  IMPORTANTE - PORTAINER                        │"
+echo "├──────────────────────────────────────────────────────────────┤"
+echo "│ 🔴 CRIE SUA CONTA EM ATÉ 5 MINUTOS!                       │"
+echo "│ 🌐 Acesse: https://$DOMINIO_PORTAINER                    │"
+echo "│ ⏰ Timeout após 5 minutos de inatividade                    │"
+echo "│ 🔑 Configure username e senha de administrador            │"
+echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
 
 # 3. INSTALAR POSTGRESQL
 echo ""
-echo "â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”"
-echo "â”‚             ETAPA 3/6 - INSTALANDO POSTGRESQL                 â”‚"
-echo "â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜"
-log_info "ðŸ—„ï¸ Configurando banco de dados..."
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│             ETAPA 3/6 - INSTALANDO POSTGRESQL                 │"
+echo "└──────────────────────────────────────────────────────────────┘"
+log_info "🗄️ Configurando banco de dados..."
 
 cat > postgres_corrigido.yaml <<EOF
 version: '3.7'
@@ -738,10 +738,10 @@ wait_service_perfect "postgres" 180
 
 # 4. INSTALAR REDIS
 echo ""
-echo "â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”"
-echo "â”‚                ETAPA 4/6 - INSTALANDO REDIS                   â”‚"
-echo "â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜"
-log_info "ðŸ”´ Configurando cache e filas..."
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│                ETAPA 4/6 - INSTALANDO REDIS                   │"
+echo "└──────────────────────────────────────────────────────────────┘"
+log_info "🔴 Configurando cache e filas..."
 
 cat > redis_corrigido.yaml <<EOF
 version: '3.7'
@@ -779,18 +779,18 @@ docker stack deploy --prune --resolve-image always -c redis_corrigido.yaml redis
 wait_service_perfect "redis" 120
 
 # Aguardar bancos estabilizarem
-log_info "â³ Aguardando bancos de dados estabilizarem..."
+log_info "⏳ Aguardando bancos de dados estabilizarem..."
 sleep 60
 
 # Criar bancos de dados
-log_info "ðŸ—ƒï¸ Criando bancos de dados..."
+log_info "🗃️ Criando bancos de dados..."
 for i in {1..30}; do
     postgres_container=$(docker ps --filter "name=postgres_postgres" --format "{{.Names}}" | head -1)
     if [ ! -z "$postgres_container" ]; then
         if docker exec $postgres_container pg_isready -U postgres >/dev/null 2>&1; then
             docker exec $postgres_container psql -U postgres -d postgres -c "CREATE DATABASE evolution;" 2>/dev/null || true
             docker exec $postgres_container psql -U postgres -d postgres -c "CREATE DATABASE n8n;" 2>/dev/null || true
-            log_success "âœ… Bancos de dados criados!"
+            log_success "✅ Bancos de dados criados!"
             break
         fi
     fi
@@ -800,10 +800,10 @@ done
 
 # 5. INSTALAR EVOLUTION API
 echo ""
-echo "â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”"
-echo "â”‚            ETAPA 5/6 - INSTALANDO EVOLUTION API               â”‚"
-echo "â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜"
-log_info "ðŸ“± Configurando API do WhatsApp..."
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│            ETAPA 5/6 - INSTALANDO EVOLUTION API               │"
+echo "└──────────────────────────────────────────────────────────────┘"
+log_info "📱 Configurando API do WhatsApp..."
 
 # Criar volumes
 docker volume create evolution_instances >/dev/null 2>&1
@@ -915,24 +915,24 @@ wait_service_perfect "evolution" 300
 check_ssl_simple "$DOMINIO_EVOLUTION" "Evolution API"
 
 echo ""
-echo "â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”"
-echo "â”‚               âš ï¸  IMPORTANTE - EVOLUTION API                   â”‚"
-echo "â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤"
-echo "â”‚ ðŸŒ Acesse: https://$DOMINIO_EVOLUTION                       â”‚"
-echo "â”‚ ðŸ”§ Painel Admin: https://$DOMINIO_EVOLUTION/manager             â”‚"
-echo "â”‚ ðŸ”‘ API Key: $EVOLUTION_API_KEY"
-echo "â”‚ ðŸ“± Para conectar WhatsApp: POST /instance/create          â”‚"
-echo "â”‚ ðŸ—ƒï¸ DocumentaÃ§Ã£o: https://$DOMINIO_EVOLUTION/docs           â”‚"
-echo "â”‚ âš¡ Status da API: GET https://$DOMINIO_EVOLUTION/             â”‚"
-echo "â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜"
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│               ⚠️  IMPORTANTE - EVOLUTION API                   │"
+echo "├──────────────────────────────────────────────────────────────┤"
+echo "│ 🌐 Acesse: https://$DOMINIO_EVOLUTION                       │"
+echo "│ 🔧 Painel Admin: https://$DOMINIO_EVOLUTION/manager             │"
+echo "│ 🔑 API Key: $EVOLUTION_API_KEY"
+echo "│ 📱 Para conectar WhatsApp: POST /instance/create          │"
+echo "│ 🗃️ Documentação: https://$DOMINIO_EVOLUTION/docs           │"
+echo "│ ⚡ Status da API: GET https://$DOMINIO_EVOLUTION/             │"
+echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
 
 # 6. INSTALAR N8N
 echo ""
-echo "â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”"
-echo "â”‚                 ETAPA 6/6 - INSTALANDO N8N                    â”‚"
-echo "â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜"
-log_info "ðŸ”„ Configurando automaÃ§Ã£o de workflows..."
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│                 ETAPA 6/6 - INSTALANDO N8N                    │"
+echo "└──────────────────────────────────────────────────────────────┘"
+log_info "🔄 Configurando automação de workflows..."
 
 cat > n8n_corrigido.yaml <<EOF
 version: '3.7'
@@ -1017,190 +1017,94 @@ check_ssl_simple "$DOMINIO_N8N" "N8N"
 check_ssl_simple "$WEBHOOK_N8N" "Webhook N8N"
 
 echo ""
-echo "â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”"
-echo "â”‚                  âš ï¸  IMPORTANTE - N8N                           â”‚"
-echo "â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤"
-echo "â”‚ ðŸŒ Acesse: https://$DOMINIO_N8N                            â”‚"
-echo "â”‚ ðŸ”‘ PRIMEIRA VEZ: Criar conta de administrador              â”‚"
-echo "â”‚ ðŸš€ Configure workflows e automaÃ§Ãµes                       â”‚"
-echo "â”‚ ðŸ”— Webhook: https://$WEBHOOK_N8N                          â”‚"
-echo "â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜"
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│                  ⚠️  IMPORTANTE - N8N                           │"
+echo "├──────────────────────────────────────────────────────────────┤"
+echo "│ 🌐 Acesse: https://$DOMINIO_N8N                            │"
+echo "│ 🔑 PRIMEIRA VEZ: Criar conta de administrador              │"
+echo "│ 🚀 Configure workflows e automações                       │"
+echo "│ 🔗 Webhook: https://$WEBHOOK_N8N                          │"
+echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
 
-# VERIFICAÃ‡ÃƒO FINAL DE SSL
+# VERIFICAÇÃO FINAL DE SSL
 echo ""
-echo "â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”"
-echo "â”‚                VERIFICAÃ‡ÃƒO FINAL DE SSL                       â”‚"
-echo "â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜"
-log_info "ðŸ” Verificando status final de todos os certificados SSL..."
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│                VERIFICAÇÃO FINAL DE SSL                       │"
+echo "└──────────────────────────────────────────────────────────────┘"
+log_info "🔍 Verificando status final de todos os certificados SSL..."
 
-# Verificar cada domÃ­nio uma Ãºltima vez
+# Verificar cada domínio uma última vez
 for domain in "$DOMINIO_PORTAINER" "$DOMINIO_N8N" "$DOMINIO_EVOLUTION" "$WEBHOOK_N8N"; do
     if curl -s -I "https://$domain" --max-time 8 2>/dev/null | grep -q "HTTP.*[2-4][0-9][0-9]"; then
-        log_success "âœ… $domain: SSL funcionando"
+        log_success "✅ $domain: SSL funcionando"
     else
-        log_warning "âš ï¸ $domain: SSL ainda processando"
+        log_warning "⚠️ $domain: SSL ainda processando"
     fi
 done
 
-# VERIFICAÃ‡ÃƒO FINAL COMPLETA
-echo "â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—"
-echo "â•‘                    INSTALAÃ‡ÃƒO CONCLUÃDA                     â•‘"
-echo "â•‘                       SETUP ALICIA                        â•‘"
-echo "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"
+# VERIFICAÇÃO FINAL COMPLETA
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║                    INSTALAÇÃO CONCLUÍDA                     ║"
+echo "║                       SETUP ALICIA                        ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
 
 all_perfect=true
 
-# Verificar serviÃ§os
-echo "ðŸ“Š STATUS DOS SERVIÃ‡OS:"
+# Verificar serviços
+echo "📊 STATUS DOS SERVIÇOS:"
 docker service ls
 
 echo ""
-echo "ðŸ³ CONTAINERS ATIVOS:"
+echo "🐳 CONTAINERS ATIVOS:"
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
 echo ""
-echo "ðŸ” VERIFICAÃ‡ÃƒO SSL:"
+echo "🔐 VERIFICAÇÃO SSL:"
 
-# Testar HTTPS para cada serviÃ§o
+# Testar HTTPS para cada serviço
 for domain in "$DOMINIO_PORTAINER" "$DOMINIO_N8N" "$DOMINIO_EVOLUTION"; do
-    echo "ðŸ” Testando SSL para $domain..."
+    echo "🔍 Testando SSL para $domain..."
     
     # Testar HTTPS
     if curl -s -I "https://$domain" 2>/dev/null | grep -q "HTTP.*200\|HTTP.*301\|HTTP.*302\|HTTP.*404"; then
-        log_success "âœ… $domain: SSL FUNCIONANDO"
+        log_success "✅ $domain: SSL FUNCIONANDO"
     else
-        log_warning "âš ï¸ $domain: SSL ainda sendo gerado (aguarde alguns minutos)"
+        log_warning "⚠️ $domain: SSL ainda sendo gerado (aguarde alguns minutos)"
     fi
 done
 
 echo ""
 echo "=========================================="
-echo "ðŸŽ‰ INSTALAÃ‡ÃƒO CORRIGIDA CONCLUÃDA!"
+echo "🎉 INSTALAÇÃO CORRIGIDA CONCLUÍDA!"
 echo "=========================================="
 echo ""
-echo "â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”"
-echo "â”‚                        SERVIÃ‡OS DISPONÃVEIS                        â”‚"
-echo "â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤"
-echo "â”‚ ðŸ³ Portainer: https://$DOMINIO_PORTAINER"
-echo "â”‚ ðŸ”„ N8N: https://$DOMINIO_N8N"
-echo "â”‚ ðŸ“± Evolution API: https://$DOMINIO_EVOLUTION"
-echo "â”‚ ðŸ”§ Evolution Manager: https://$DOMINIO_EVOLUTION/manager"
-echo "â”‚ ðŸ”— Webhook N8N: https://$WEBHOOK_N8N"
-echo "â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜"
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│                        SERVIÇOS DISPONÍVEIS                        │"
+echo "├──────────────────────────────────────────────────────────────┤"
+echo "│ 🐳 Portainer: https://$DOMINIO_PORTAINER"
+echo "│ 🔄 N8N: https://$DOMINIO_N8N"
+echo "│ 📱 Evolution API: https://$DOMINIO_EVOLUTION"
+echo "│ 🔧 Evolution Manager: https://$DOMINIO_EVOLUTION/manager"
+echo "│ 🔗 Webhook N8N: https://$WEBHOOK_N8N"
+echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
-echo "â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”"
-echo "â”‚                      CREDENCIAIS DE ACESSO                      â”‚"
-echo "â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤"
-echo "â”‚ ðŸ”‘ Evolution API Key: $EVOLUTION_API_KEY"
-echo "â”‚ ðŸ—¿ PostgreSQL Password: $POSTGRES_PASSWORD"
-echo "â”‚ ðŸ” N8N Encryption Key: $N8N_KEY"
-echo "â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜"
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│                      CREDENCIAIS DE ACESSO                      │"
+echo "├──────────────────────────────────────────────────────────────┤"
+echo "│ 🔑 Evolution API Key: $EVOLUTION_API_KEY"
+echo "│ 🗿 PostgreSQL Password: $POSTGRES_PASSWORD"
+echo "│ 🔐 N8N Encryption Key: $N8N_KEY"
+echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
-echo "â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”"
-echo "â”‚                        INFORMAÃ‡Ã•ES IMPORTANTES                    â”‚"
-echo "â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤"
-echo "â”‚ â€¢ SSL processado automaticamente em background               â”‚"
-echo "â”‚ â€¢ Redirecionamento HTTPâ†’HTTPS ativo                          â”‚"
-echo "â”‚ â€¢ ðŸ”‘ Configure conta administrador no N8N                   â”‚"
-echo "â”‚ â€¢ IP do servidor: $server_ip                    â”‚"
-echo "â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜"
+echo "┌──────────────────────────────────────────────────────────────┐"
+echo "│                        INFORMAÇÕES IMPORTANTES                    │"
+echo "├──────────────────────────────────────────────────────────────┤"
+echo "│ • SSL processado automaticamente em background               │"
+echo "│ • Redirecionamento HTTP→HTTPS ativo                          │"
+echo "│ • ⚠️  IMPORTANTE: Crie conta Portainer em 5 minutos!        │"
+echo "│ • 🔑 Configure conta administrador no N8N                   │"
+echo "│ • IP do servidor: $server_ip                    │"
+echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
-echo "ðŸŽ‰ InstalaÃ§Ã£o concluÃ­da com sucesso!"
-# ================== Portainer: bootstrap automático (inline) ==================
-# Cria admin automaticamente, autentica na API e cria/atualiza stacks gerenciadas
-# Tenta 127.0.0.1:9000; se falhar e DOMINIO_PORTAINER existir, usa https://DOMINIO (com -k)
-
-portainer_bootstrap_inline() {
-  set +e
-  need() { command -v "$1" >/dev/null 2>&1; }
-  if ! need curl; then
-    if command -v apt >/dev/null 2>&1; then sudo apt update -y && sudo apt install -y curl; fi
-    if command -v yum >/dev/null 2>&1; then sudo yum install -y curl; fi
-  fi
-  if ! need jq; then
-    if command -v apt >/dev/null 2>&1; then sudo apt update -y && sudo apt install -y jq; fi
-    if command -v yum >/dev/null 2>&1; then sudo yum install -y jq; fi
-  fi
-  set -e
-
-  [ -f .env ] && set -a && source .env && set +a
-  if [ -z "${PORTAINER_ADMIN_PASSWORD:-}" ]; then
-    PORTAINER_ADMIN_PASSWORD="$(tr -dc 'A-Za-z0-9!@#%^&*' </dev/urandom | head -c 20)"
-    echo "PORTAINER_ADMIN_PASSWORD=${PORTAINER_ADMIN_PASSWORD}" >> .env
-  fi
-
-  CURL_FLAGS=( -fsS )
-  PORTAINER_URL=""
-  choose_portainer_url() {
-    if curl "${CURL_FLAGS[@]}" http://127.0.0.1:9000/api/system/status >/dev/null 2>&1; then
-      PORTAINER_URL="http://127.0.0.1:9000"; return; fi
-    if [ -n "${DOMINIO_PORTAINER:-}" ]; then
-      if curl -k "${CURL_FLAGS[@]}" "https://${DOMINIO_PORTAINER}/api/system/status" >/dev/null 2>&1; then
-        PORTAINER_URL="https://${DOMINIO_PORTAINER}"; CURL_FLAGS=( -k -fsS ); return; fi
-    fi
-    PORTAINER_URL=""
-  }
-
-  echo "[Portainer] Aguardando serviço..."
-  for i in $(seq 1 90); do
-    choose_portainer_url
-    if [ -n "$PORTAINER_URL" ]; then echo "[Portainer] Online em: $PORTAINER_URL"; break; fi
-    sleep 2
-    [ "$i" -eq 90 ] && { echo "[Portainer] Timeout"; return 1; }
-  done
-
-  curl "${CURL_FLAGS[@]}" -X POST "$PORTAINER_URL/api/users/admin/init" \
-    -H "Content-Type: application/json" -d "{\"Password\": \"${PORTAINER_ADMIN_PASSWORD}\"}" \
-    >/dev/null 2>&1 || true
-
-  JWT="$( curl "${CURL_FLAGS[@]}" -X POST "$PORTAINER_URL/api/auth" -H "Content-Type: application/json" \
-    -d "{\"Username\":\"admin\",\"Password\":\"${PORTAINER_ADMIN_PASSWORD}\"}" | jq -r .jwt )"
-  if [ -z "${JWT}" ] || [ "${JWT}" = "null" ]; then echo "[Portainer] Falha auth"; return 1; fi
-
-  ENDPOINT_ID="$( curl "${CURL_FLAGS[@]}" "$PORTAINER_URL/api/endpoints" -H "Authorization: Bearer ${JWT}" \
-    | jq 'map(select(.Name=="local")) | .[0].Id' )"
-  if [ -z "${ENDPOINT_ID}" ] || [ "${ENDPOINT_ID}" = "null" ]; then
-    curl "${CURL_FLAGS[@]}" -X POST "$PORTAINER_URL/api/endpoints" -H "Authorization: Bearer ${JWT}" \
-      -H "Content-Type: application/json" -d '{"Name":"local","EndpointCreationType":1,"URL":"unix:///var/run/docker.sock"}' >/dev/null
-    ENDPOINT_ID="$( curl "${CURL_FLAGS[@]}" "$PORTAINER_URL/api/endpoints" -H "Authorization: Bearer ${JWT}" | jq 'map(select(.Name=="local")) | .[0].Id' )"
-  fi
-
-  SWARM_ID="$(docker info -f '{{.Swarm.Cluster.ID}}' 2>/dev/null || true)"
-  if [ -z "${SWARM_ID}" ]; then docker swarm init >/dev/null 2>&1 || true; SWARM_ID="$(docker info -f '{{.Swarm.Cluster.ID}}')"; fi
-
-  create_or_update_stack() {
-    local stack_name="$1"; local file_path="$2"; local base_name; base_name="$(basename "${file_path}")"
-    if [ ! -f "${file_path}" ] && [ ! -f "./stacks/${base_name}" ]; then
-      mkdir -p ./stacks
-      curl -fsSL "https://raw.githubusercontent.com/lonardonetto/setupalicia/main/stacks/${base_name}" -o "./stacks/${base_name}" || true
-    fi
-    if [ ! -f "${file_path}" ] && [ -f "./stacks/${base_name}" ]; then file_path="./stacks/${base_name}"; fi
-    if [ ! -f "${file_path}" ]; then echo "[Stack] Arquivo não encontrado: ${file_path} (ignorando ${stack_name})"; return; fi
-    local content; content="$(cat "${file_path}")"; local existing_id
-    existing_id="$( curl "${CURL_FLAGS[@]}" "$PORTAINER_URL/api/stacks?endpointId=${ENDPOINT_ID}" -H "Authorization: Bearer ${JWT}" \
-      | jq -r --arg n "${stack_name}" '.[] | select(.Name==$n) | .Id' | head -n1 )"
-    if [ -n "${existing_id}" ]; then
-      echo "[Stack] Atualizando ${stack_name} (${existing_id})"
-      curl "${CURL_FLAGS[@]}" -X PUT "$PORTAINER_URL/api/stacks/${existing_id}?endpointId=${ENDPOINT_ID}" -H "Authorization: Bearer ${JWT}" \
-        -H "Content-Type: application/json" -d "$(jq -n --arg c "${content}" '{StackFileContent:$c, Prune:true}')" >/dev/null
-    else
-      echo "[Stack] Criando ${stack_name}"
-      curl "${CURL_FLAGS[@]}" -X POST "$PORTAINER_URL/api/stacks?type=3&method=string&endpointId=${ENDPOINT_ID}" -H "Authorization: Bearer ${JWT}" \
-        -H "Content-Type: application/json" -d "$(jq -n --arg name "${stack_name}" --arg content "${content}" --arg swarmId "${SWARM_ID}" '{Name:$name, SwarmID:$swarmId, StackFileContent:$content, Env: []}')" >/dev/null
-    fi
-  }
-
-  create_or_update_stack "traefik" "traefik.yaml"
-  create_or_update_stack "portainer" "portainer.yaml"
-  create_or_update_stack "redis" "redis.yaml"
-  create_or_update_stack "postgres" "postgres.yaml"
-  create_or_update_stack "n8n" "n8n.yaml"
-  create_or_update_stack "evolution" "evolution_corrigido.yaml"
-
-  echo "[Portainer] Deploy via API concluído. Stacks editáveis na UI."
-}
-
-# Executa bootstrap imediatamente após subir Portainer/Traefik
-portainer_bootstrap_inline || echo "[Portainer] Bootstrap falhou; verifique logs."
-# ===========================================================================
+echo "🎉 Instalação concluída com sucesso!"
