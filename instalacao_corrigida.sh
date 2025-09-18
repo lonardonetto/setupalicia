@@ -162,8 +162,7 @@ fix_ssl_especifico() {
 converter_stacks_full_control() {
     log_warning "🔄 CONVERTER STACKS PARA FULL CONTROL"
     echo ""
-    echo "Como as stacks Limited não podem ser editadas/excluídas"
-    echo "pelo Portainer, vamos recriá-las via linha de comando."
+    echo "Vamos usar a API do Portainer para ter controle total."
     echo ""
     
     # Carregar variáveis
@@ -174,51 +173,126 @@ converter_stacks_full_control() {
     
     source .env
     
-    echo "Stacks que serão convertidas:"
+    # Detectar Portainer
+    log_info "🔍 Detectando Portainer..."
+    PORTAINER_URL=""
+    
+    # Tentar HTTPS primeiro
+    if curl -sk "https://$DOMINIO_PORTAINER/api/status" >/dev/null 2>&1; then
+        PORTAINER_URL="https://$DOMINIO_PORTAINER"
+    # Tentar HTTP
+    elif curl -s "http://$DOMINIO_PORTAINER/api/status" >/dev/null 2>&1; then
+        PORTAINER_URL="http://$DOMINIO_PORTAINER"
+    # Tentar IP direto
+    else
+        container=$(docker ps --filter "name=portainer_portainer" --format "{{.Names}}" | head -1)
+        if [ ! -z "$container" ]; then
+            ip=$(docker inspect $container --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' | head -1)
+            if [ ! -z "$ip" ] && curl -s "http://$ip:9000/api/status" >/dev/null 2>&1; then
+                PORTAINER_URL="http://$ip:9000"
+            fi
+        fi
+    fi
+    
+    if [ -z "$PORTAINER_URL" ]; then
+        log_error "Não foi possível conectar ao Portainer!"
+        return 1
+    fi
+    
+    log_success "✅ Portainer encontrado: $PORTAINER_URL"
+    
+    # Obter credenciais
+    if [ -z "$PORTAINER_ADMIN_USER" ] || [ -z "$PORTAINER_ADMIN_PASSWORD" ]; then
+        log_info "Digite as credenciais do Portainer:"
+        read -p "Usuário: " PORTAINER_ADMIN_USER
+        read -sp "Senha: " PORTAINER_ADMIN_PASSWORD
+        echo ""
+    fi
+    
+    # Fazer login
+    log_info "🔐 Fazendo login no Portainer..."
+    JWT_RESPONSE=$(curl -sk -X POST \
+        "$PORTAINER_URL/api/auth" \
+        -H "Content-Type: application/json" \
+        -d "{\"Username\":\"$PORTAINER_ADMIN_USER\",\"Password\":\"$PORTAINER_ADMIN_PASSWORD\"}" 2>/dev/null)
+    
+    JWT_TOKEN=$(echo "$JWT_RESPONSE" | sed -n 's/.*"jwt":"\([^"]*\).*/\1/p')
+    
+    if [ -z "$JWT_TOKEN" ]; then
+        log_error "Falha no login! Verifique as credenciais."
+        return 1
+    fi
+    
+    log_success "✅ Login realizado com sucesso!"
+    
+    echo ""
+    echo "Stacks que serão convertidas para Full Control:"
     echo "  • postgres"
     echo "  • redis"
     echo "  • evolution"
     echo "  • n8n"
     echo ""
-    echo "Traefik e Portainer permanecerão Limited (normal)."
-    echo ""
     
     confirmar "Deseja converter as stacks para Full Control?"
     
-    # Função auxiliar para remover e recriar stack
-    recreate_stack() {
+    # Função para remover stack
+    remove_stack() {
         local stack_name=$1
-        
-        log_info "Processando $stack_name..."
-        
-        # Remover stack via CLI (funciona mesmo com Limited)
+        log_info "Removendo $stack_name..."
         docker stack rm "$stack_name" >/dev/null 2>&1 || true
-        
-        # Aguardar remoção
-        log_info "Aguardando remoção de $stack_name..."
-        for i in {1..20}; do
+        for i in {1..15}; do
             if ! docker service ls | grep -q "${stack_name}_"; then
                 break
             fi
             sleep 2
         done
-        sleep 5
-        
-        log_success "✅ $stack_name removida!"
+        sleep 3
     }
     
-    # Remover todas as stacks
+    # Função para criar stack via API
+    create_stack_api() {
+        local stack_name=$1
+        local stack_content=$2
+        
+        log_info "🚀 Criando $stack_name via API (Full Control)..."
+        
+        # Criar payload JSON
+        local json_payload=$(cat <<JSON
+{
+    "Name": "$stack_name",
+    "SwarmID": "primary",
+    "StackFileContent": $(echo "$stack_content" | python3 -c "import sys, json; print(json.dumps(sys.stdin.read()))" 2>/dev/null || echo "\"$stack_content\"")
+}
+JSON
+)
+        
+        # Deploy via API
+        local response=$(curl -sk -X POST \
+            "$PORTAINER_URL/api/stacks?type=1&method=string&endpointId=1" \
+            -H "Authorization: Bearer $JWT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$json_payload" 2>&1)
+        
+        if echo "$response" | grep -q "\"Id\""; then
+            log_success "✅ $stack_name criada com FULL CONTROL!"
+            return 0
+        else
+            log_error "❌ Falha ao criar $stack_name via API"
+            echo "Resposta: $response"
+            return 1
+        fi
+    }
+    
+    # Remover todas as stacks primeiro
     for stack in postgres redis evolution n8n; do
-        recreate_stack "$stack"
+        remove_stack "$stack"
     done
     
-    log_info "🚀 Recriando stacks..."
     echo ""
+    log_info "🚀 Criando stacks com Full Control via API..."
     
-    # Recriar PostgreSQL
-    log_info "[1/4] Recriando PostgreSQL..."
-    cat <<EOF | docker stack deploy --prune --resolve-image always -c - postgres
-version: '3.8'
+    # PostgreSQL
+    POSTGRES_YAML="version: '3.8'
 services:
   postgres:
     image: postgres:15
@@ -239,14 +313,13 @@ volumes:
     external: true
 networks:
   network_public:
-    external: true
-EOF
+    external: true"
+    
+    create_stack_api "postgres" "$POSTGRES_YAML"
     sleep 10
     
-    # Recriar Redis
-    log_info "[2/4] Recriando Redis..."
-    cat <<EOF | docker stack deploy --prune --resolve-image always -c - redis
-version: '3.8'
+    # Redis
+    REDIS_YAML="version: '3.8'
 services:
   redis:
     image: redis:7-alpine
@@ -265,8 +338,9 @@ volumes:
     external: true
 networks:
   network_public:
-    external: true
-EOF
+    external: true"
+    
+    create_stack_api "redis" "$REDIS_YAML"
     sleep 10
     
     # Criar databases
@@ -281,10 +355,8 @@ EOF
         sleep 3
     done
     
-    # Recriar Evolution
-    log_info "[3/4] Recriando Evolution API..."
-    cat <<EOF | docker stack deploy --prune --resolve-image always -c - evolution
-version: '3.8'
+    # Evolution
+    EVOLUTION_YAML="version: '3.8'
 services:
   evolution-api:
     image: atendai/evolution-api:v2.2.3
@@ -327,13 +399,13 @@ volumes:
 networks:
   network_public:
     external: true
-EOF
+"
+    
+    create_stack_api "evolution" "$EVOLUTION_YAML"
     sleep 10
     
-    # Recriar N8N
-    log_info "[4/4] Recriando N8N..."
-    cat <<EOF | docker stack deploy --prune --resolve-image always -c - n8n
-version: '3.8'
+    # N8N
+    N8N_YAML="version: '3.8'
 services:
   n8n:
     image: n8nio/n8n:latest
@@ -377,23 +449,20 @@ volumes:
 networks:
   network_public:
     external: true
-EOF
+"
+    
+    create_stack_api "n8n" "$N8N_YAML"
     
     echo ""
-    log_success "✅ STACKS RECRIADAS!"
+    log_success "✅ CONVERSÃO CONCLUÍDA!"
     echo ""
-    echo "📊 STATUS:"
+    echo "📊 STATUS DAS STACKS:"
     docker stack ls
     echo ""
-    echo "⚠️ IMPORTANTE:"
-    echo "As stacks ainda estarão 'Limited' mas agora podem ser removidas."
+    echo "✅ Agora você pode editar as stacks no Portainer!"
+    echo "Acesse: $PORTAINER_URL"
     echo ""
-    echo "Para ter FULL CONTROL, você precisa:"
-    echo "1. Acessar o Portainer"
-    echo "2. Deletar cada stack (agora é possível)"
-    echo "3. Recriar via interface do Portainer"
-    echo ""
-    echo "Ou simplesmente use as stacks como estão - elas funcionam!"
+    echo "As stacks agora têm controle TOTAL (Full Control)."
 }
 
 # Menu principal
