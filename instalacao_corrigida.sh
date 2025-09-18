@@ -2,8 +2,9 @@
 
 # 🚀 SETUPALICIA - MENU COMPLETO + INSTALAÇÃO FUNCIONANDO
 # Mantém o script original que funciona 100% + adiciona funcionalidades extras
-# Autor: Maicon Ramos - Automação sem Limites
-# Versão: MENU + ORIGINAL FUNCIONANDO
+# Autor: SetupAlicia - Automação DevOps
+# Data: 2024
+# Versão: 3.0 DEFINITIVA - Deploy via API PortainerMENU + ORIGINAL FUNCIONANDO
 
 set -e
 
@@ -84,6 +85,7 @@ services:
         - traefik.http.routers.portainer.tls.certresolver=letsencryptresolver
         - traefik.http.routers.portainer.entrypoints=websecure
         - traefik.http.services.portainer.loadbalancer.server.port=9000
+        - traefik.http.routers.portainer.service=portainer
         - traefik.docker.network=network_public
 
   agent:
@@ -529,6 +531,64 @@ check_ssl_simple() {
     log_success "✅ $service_name configurado! Continuando instalação..."
 }
 
+# Função para fazer login no Portainer e obter JWT
+portainer_login() {
+    local portainer_url=$1
+    local username=$2
+    local password=$3
+    
+    local response=$(curl -sk -X POST \
+        "$portainer_url/api/auth" \
+        -H "Content-Type: application/json" \
+        -d "{\"Username\":\"$username\",\"Password\":\"$password\"}" 2>/dev/null)
+    
+    local jwt_token=$(echo "$response" | sed -n 's/.*"jwt":"\([^"]*\).*/\1/p')
+    echo "$jwt_token"
+}
+
+# Função para deploy via API do Portainer (FULL CONTROL)
+deploy_via_portainer_api() {
+    local stack_name=$1
+    local yaml_file=$2
+    local portainer_url=$3
+    local jwt_token=$4
+    
+    log_info "🚀 Deployando $stack_name via API do Portainer (Full Control)..."
+    
+    # Remover stack existente se houver
+    docker stack rm "$stack_name" >/dev/null 2>&1 || true
+    sleep 10
+    
+    # Ler conteúdo do arquivo
+    local stack_content=$(cat "$yaml_file")
+    
+    # Criar payload para API
+    local json_payload=$(cat <<JSON
+{
+    "Name": "$stack_name",
+    "SwarmID": "primary",
+    "StackFileContent": $(echo "$stack_content" | python3 -c "import sys, json; print(json.dumps(sys.stdin.read()))" 2>/dev/null || echo "\"$stack_content\"\n" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | tr -d '\n')
+}
+JSON
+)
+    
+    # Deploy via API
+    local response=$(curl -sk -X POST \
+        "$portainer_url/api/stacks?type=1&method=string&endpointId=1" \
+        -H "Authorization: Bearer $jwt_token" \
+        -H "Content-Type: application/json" \
+        -d "$json_payload" 2>&1)
+    
+    if echo "$response" | grep -q "\"Id\""; then
+        log_success "✅ $stack_name deployada com controle TOTAL!"
+        return 0
+    else
+        log_warning "⚠️ Fallback: deployando via CLI"
+        docker stack deploy --prune --resolve-image always -c "$yaml_file" "$stack_name"
+        return 1
+    fi
+}
+
 # NOVA FUNÇÃO: Criar conta admin do Portainer automaticamente
 create_portainer_admin_auto() {
     log_info "🔑 Configurando conta admin do Portainer automaticamente..."
@@ -769,13 +829,31 @@ EOF
 docker volume create portainer_data >/dev/null 2>&1
 docker network create --driver=overlay agent_network >/dev/null 2>&1
 docker stack deploy --prune --resolve-image always -c portainer_corrigido.yaml portainer
-wait_service_perfect "portainer" 120
-
-# Verificar SSL do Portainer imediatamente
-check_ssl_simple "$DOMINIO_PORTAINER" "Portainer"
-
-# NOVO: Criar conta admin do Portainer automaticamente
+wait_service_perfect "portainer" 300
 create_portainer_admin_auto
+
+# Tentar fazer login e obter JWT para deploy via API
+JWT_TOKEN=""
+PORTAINER_API_URL=""
+if [ ! -z "$PORTAINER_ADMIN_USER" ] && [ ! -z "$PORTAINER_ADMIN_PASSWORD" ]; then
+    # Encontrar URL do Portainer
+    for url in "https://$DOMINIO_PORTAINER" "http://$DOMINIO_PORTAINER" "http://localhost:9000"; do
+        if curl -sk "$url/api/status" >/dev/null 2>&1; then
+            PORTAINER_API_URL="$url"
+            break
+        fi
+    done
+    
+    if [ ! -z "$PORTAINER_API_URL" ]; then
+        JWT_TOKEN=$(portainer_login "$PORTAINER_API_URL" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
+        if [ ! -z "$JWT_TOKEN" ]; then
+            log_success "✅ Login no Portainer realizado! Deploy via API ativado."
+            USE_PORTAINER_API=true
+        fi
+    fi
+fi
+
+check_ssl_simple "$DOMINIO_PORTAINER" "Portainer"
 
 echo ""
 echo "┌──────────────────────────────────────────────────────────────┐"
@@ -834,7 +912,13 @@ networks:
 EOF
 
 docker volume create postgres_data >/dev/null 2>&1
-docker stack deploy --prune --resolve-image always -c postgres_corrigido.yaml postgres
+
+# Tentar deploy via API do Portainer para ter Full Control
+if [ "$USE_PORTAINER_API" = "true" ] && [ ! -z "$JWT_TOKEN" ]; then
+    deploy_via_portainer_api "postgres" "postgres_corrigido.yaml" "$PORTAINER_API_URL" "$JWT_TOKEN"
+else
+    docker stack deploy --prune --resolve-image always -c postgres_corrigido.yaml postgres
+fi
 wait_service_perfect "postgres" 180
 
 # 4. INSTALAR REDIS
@@ -876,7 +960,13 @@ networks:
 EOF
 
 docker volume create redis_data >/dev/null 2>&1
-docker stack deploy --prune --resolve-image always -c redis_corrigido.yaml redis
+
+# Tentar deploy via API do Portainer para ter Full Control
+if [ "$USE_PORTAINER_API" = "true" ] && [ ! -z "$JWT_TOKEN" ]; then
+    deploy_via_portainer_api "redis" "redis_corrigido.yaml" "$PORTAINER_API_URL" "$JWT_TOKEN"
+else
+    docker stack deploy --prune --resolve-image always -c redis_corrigido.yaml redis
+fi
 wait_service_perfect "redis" 120
 
 # Aguardar bancos estabilizarem
@@ -944,7 +1034,6 @@ services:
       - CACHE_REDIS_ENABLED=true
       - CACHE_REDIS_URI=redis://redis_redis:6379
       - CACHE_REDIS_PREFIX_KEY=evolution
-      - CACHE_REDIS_SAVE_INSTANCES=true
       - CACHE_LOCAL_ENABLED=false
       - QRCODE_LIMIT=30
       - QRCODE_COLOR=#198754
@@ -1009,7 +1098,15 @@ networks:
     external: true
 EOF
 
-docker stack deploy --prune --resolve-image always -c evolution_corrigido.yaml evolution
+docker volume create evolution_instances >/dev/null 2>&1
+docker volume create evolution_store >/dev/null 2>&1
+
+# Tentar deploy via API do Portainer para ter Full Control
+if [ "$USE_PORTAINER_API" = "true" ] && [ ! -z "$JWT_TOKEN" ]; then
+    deploy_via_portainer_api "evolution" "evolution_corrigido.yaml" "$PORTAINER_API_URL" "$JWT_TOKEN"
+else
+    docker stack deploy --prune --resolve-image always -c evolution_corrigido.yaml evolution
+fi
 wait_service_perfect "evolution" 300
 
 # Verificar SSL do Evolution imediatamente
@@ -1035,7 +1132,7 @@ echo "│                 ETAPA 6/6 - INSTALANDO N8N                    │"
 echo "└──────────────────────────────────────────────────────────────┘"
 log_info "🔄 Configurando automação de workflows..."
 
-cat > n8n_corrigido.yaml <<EOF
+cat > n8n_corrigida.yaml <<EOF
 version: '3.7'
 
 services:
@@ -1110,7 +1207,13 @@ networks:
 EOF
 
 docker volume create n8n_data >/dev/null 2>&1
-docker stack deploy --prune --resolve-image always -c n8n_corrigido.yaml n8n
+
+# Tentar deploy via API do Portainer para ter Full Control
+if [ "$USE_PORTAINER_API" = "true" ] && [ ! -z "$JWT_TOKEN" ]; then
+    deploy_via_portainer_api "n8n" "n8n_corrigida.yaml" "$PORTAINER_API_URL" "$JWT_TOKEN"
+else
+    docker stack deploy --prune --resolve-image always -c n8n_corrigida.yaml n8n
+fi
 wait_service_perfect "n8n" 300
 
 # Verificar SSL do N8N e Webhook imediatamente
