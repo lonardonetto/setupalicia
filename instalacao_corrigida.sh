@@ -951,26 +951,39 @@ check_ssl_simple() {
     log_success "✅ $service_name configurado! Continuando instalação..."
 }
 
-# NOVA ABORDAGEM: Deploy garantido com Full Control
-deploy_garantido_full_control() {
+# DEPLOY OBRIGATÓRIO VIA API - FULL CONTROL GARANTIDO
+deploy_obrigatorio_full_control() {
     local stack_name=$1
     local yaml_file=$2
     
-    log_info "🚀 Deploy garantido de $stack_name com Full Control..."
+    log_info "🚀 Deploy OBRIGATÓRIO via API - Full Control garantido..."
     
-    # 1. Deploy via CLI primeiro (sempre funciona)
-    log_info "Passo 1: Deploy via CLI..."
-    docker stack deploy --prune --resolve-image always -c "$yaml_file" "$stack_name"
+    # Verificar se temos API disponível
+    if [ "$USE_PORTAINER_API" != "true" ] || [ -z "$JWT_TOKEN" ] || [ -z "$PORTAINER_API_URL" ]; then
+        log_error "❌ API do Portainer não disponível!"
+        log_error "Não é possível garantir Full Control sem API."
+        log_error ""
+        log_error "SOLUÇÕES:"
+        log_error "1. Execute: ./instalacao_corrigida.sh (menu) -> Opção 2 (Reset Portainer)"
+        log_error "2. Aguarde 5 minutos e tente novamente"
+        log_error "3. Verifique se o Portainer está acessível: https://$DOMINIO_PORTAINER"
+        exit 1
+    fi
     
-    # 2. Aguardar stack estar ativa
-    sleep 15
+    # Deploy APENAS via API
+    log_info "Deployando $stack_name via API do Portainer..."
     
-    # 3. Se temos API disponível, converter para Full Control
-    if [ "$USE_PORTAINER_API" = "true" ] && [ ! -z "$JWT_TOKEN" ] && [ ! -z "$PORTAINER_API_URL" ]; then
-        log_info "Passo 2: Convertendo para Full Control via API..."
-        converter_stack_para_full_control "$stack_name" "$yaml_file"
+    if deploy_via_portainer_api_obrigatorio "$stack_name" "$yaml_file" "$PORTAINER_API_URL" "$JWT_TOKEN"; then
+        log_success "✅ $stack_name deployada com Full Control garantido!"
     else
-        log_info "API não disponível, stack deployada via CLI (Limited)"
+        log_error "❌ Falha no deploy via API de $stack_name"
+        log_error "Stack não será deployada via CLI para evitar Limited."
+        log_error ""
+        log_error "SOLUÇÕES:"
+        log_error "1. Execute: ./instalacao_corrigida.sh -> Opção 6 (Debug API)"
+        log_error "2. Verifique conectividade com Portainer"
+        log_error "3. Reinicie o Portainer se necessário"
+        exit 1
     fi
 }
 
@@ -1021,6 +1034,83 @@ converter_stack_para_full_control() {
     
     log_warning "⚠️ $stack_name permanece Limited (mas funcional)"
     return 1
+}
+
+# Função de deploy via API OBRIGATÓRIO (sem fallback)
+deploy_via_portainer_api_obrigatorio() {
+    local stack_name=$1
+    local yaml_file=$2
+    local portainer_url=$3
+    local jwt_token=$4
+    
+    log_info "🚀 Deploy OBRIGATÓRIO via API (sem fallback para CLI)..."
+    
+    # Remover stack existente se houver
+    docker stack rm "$stack_name" >/dev/null 2>&1 || true
+    sleep 10
+    
+    # Ler conteúdo do arquivo e escapar para JSON
+    local stack_content=$(cat "$yaml_file")
+    
+    # Escapar conteúdo para JSON usando jq
+    local escaped_content
+    if command -v jq >/dev/null 2>&1; then
+        escaped_content=$(echo "$stack_content" | jq -Rs .)
+    else
+        log_error "jq não encontrado! Instale jq para continuar."
+        return 1
+    fi
+    
+    # Obter endpoint ID correto
+    local endpoint_response=$(curl -sk -H "Authorization: Bearer $jwt_token" "$portainer_url/api/endpoints" 2>/dev/null)
+    local endpoint_id=$(echo "$endpoint_response" | sed -n 's/.*"Id":\([0-9]*\).*/\1/p' | head -1)
+    
+    if [ -z "$endpoint_id" ]; then
+        endpoint_id=1
+    fi
+    
+    # Criar payload JSON correto
+    local json_payload="{
+        \"Name\": \"$stack_name\",
+        \"SwarmID\": \"primary\",
+        \"StackFileContent\": $escaped_content,
+        \"Env\": []
+    }"
+    
+    log_info "Tentando deploy via API..."
+    log_info "Endpoint ID: $endpoint_id"
+    log_info "URL: $portainer_url/api/stacks?type=1&method=string&endpointId=$endpoint_id"
+    
+    # Deploy via API
+    local response=$(curl -sk -X POST \
+        "$portainer_url/api/stacks?type=1&method=string&endpointId=$endpoint_id" \
+        -H "Authorization: Bearer $jwt_token" \
+        -H "Content-Type: application/json" \
+        -d "$json_payload" 2>&1)
+    
+    # Verificar resposta
+    if echo "$response" | grep -q "\"Id\"\|\"Name\""; then
+        log_success "✅ Deploy via API bem-sucedido!"
+        return 0
+    else
+        log_error "Resposta da API: $response"
+        
+        # Tentar endpoint alternativo
+        log_info "Tentando endpoint alternativo..."
+        local alt_response=$(curl -sk -X POST \
+            "$portainer_url/api/stacks/create/swarm/string?endpointId=$endpoint_id" \
+            -H "Authorization: Bearer $jwt_token" \
+            -H "Content-Type: application/json" \
+            -d "$json_payload" 2>&1)
+        
+        if echo "$alt_response" | grep -q "\"Id\"\|\"Name\""; then
+            log_success "✅ Deploy via endpoint alternativo bem-sucedido!"
+            return 0
+        else
+            log_error "Resposta alternativa: $alt_response"
+            return 1
+        fi
+    fi
 }
 
 # Função original mantida para debug
@@ -1476,8 +1566,8 @@ EOF
 
 docker volume create postgres_data >/dev/null 2>&1
 
-# Deploy garantido com tentativa de Full Control
-deploy_garantido_full_control "postgres" "postgres_corrigido.yaml"
+# Deploy OBRIGATÓRIO via API - Full Control garantido
+deploy_obrigatorio_full_control "postgres" "postgres_corrigido.yaml"
 wait_service_perfect "postgres" 180
 
 # 4. INSTALAR REDIS
@@ -1520,8 +1610,8 @@ EOF
 
 docker volume create redis_data >/dev/null 2>&1
 
-# Deploy garantido com tentativa de Full Control
-deploy_garantido_full_control "redis" "redis_corrigido.yaml"
+# Deploy OBRIGATÓRIO via API - Full Control garantido
+deploy_obrigatorio_full_control "redis" "redis_corrigido.yaml"
 wait_service_perfect "redis" 120
 
 # Aguardar bancos estabilizarem
@@ -1656,8 +1746,8 @@ EOF
 docker volume create evolution_instances >/dev/null 2>&1
 docker volume create evolution_store >/dev/null 2>&1
 
-# Deploy garantido com tentativa de Full Control
-deploy_garantido_full_control "evolution" "evolution_corrigido.yaml"
+# Deploy OBRIGATÓRIO via API - Full Control garantido
+deploy_obrigatorio_full_control "evolution" "evolution_corrigido.yaml"
 wait_service_perfect "evolution" 300
 
 # Verificar SSL do Evolution imediatamente
@@ -1759,8 +1849,8 @@ EOF
 
 docker volume create n8n_data >/dev/null 2>&1
 
-# Deploy garantido com tentativa de Full Control
-deploy_garantido_full_control "n8n" "n8n_corrigida.yaml"
+# Deploy OBRIGATÓRIO via API - Full Control garantido
+deploy_obrigatorio_full_control "n8n" "n8n_corrigida.yaml"
 wait_service_perfect "n8n" 300
 
 # Verificar SSL do N8N e Webhook imediatamente
