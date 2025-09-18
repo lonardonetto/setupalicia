@@ -465,6 +465,72 @@ networks:
     echo "As stacks agora têm controle TOTAL (Full Control)."
 }
 
+# Função para forçar deploy via API com debug
+forcar_deploy_api_debug() {
+    log_warning "🎆 FORÇAR DEPLOY VIA API (DEBUG)"
+    echo ""
+    
+    # Carregar variáveis
+    if [ ! -f .env ]; then
+        log_error "Arquivo .env não encontrado!"
+        return 1
+    fi
+    
+    source .env
+    
+    echo "Testando deploy via API com debug detalhado..."
+    echo ""
+    
+    # Detectar Portainer
+    PORTAINER_URL=""
+    for url in "https://$DOMINIO_PORTAINER" "http://$DOMINIO_PORTAINER"; do
+        if curl -sk "$url/api/status" >/dev/null 2>&1; then
+            PORTAINER_URL="$url"
+            break
+        fi
+    done
+    
+    if [ -z "$PORTAINER_URL" ]; then
+        log_error "Portainer não encontrado!"
+        return 1
+    fi
+    
+    log_success "Portainer encontrado: $PORTAINER_URL"
+    
+    # Fazer login
+    JWT_TOKEN=$(portainer_login "$PORTAINER_URL" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
+    if [ -z "$JWT_TOKEN" ]; then
+        log_error "Falha no login!"
+        return 1
+    fi
+    
+    log_success "Login realizado! Token: ${JWT_TOKEN:0:20}..."
+    
+    # Testar deploy de uma stack simples
+    cat > test_stack.yaml <<EOF
+version: '3.8'
+services:
+  test:
+    image: hello-world
+    deploy:
+      mode: replicated
+      replicas: 1
+EOF
+    
+    echo ""
+    log_info "Testando deploy de stack de teste..."
+    
+    # Usar a função de deploy com debug
+    deploy_via_portainer_api "test-stack" "test_stack.yaml" "$PORTAINER_URL" "$JWT_TOKEN"
+    
+    # Limpar
+    rm -f test_stack.yaml
+    docker stack rm test-stack >/dev/null 2>&1 || true
+    
+    echo ""
+    log_info "Teste concluído!"
+}
+
 # Menu principal
 mostrar_menu() {
     clear
@@ -491,7 +557,10 @@ mostrar_menu() {
     echo "│ 5) 🔄 Converter Stacks para Full Control                    │"
     echo "│    Remove Limited e recria com controle total              │"
     echo "│                                                              │"
-    echo "│ 6) ❌ Sair                                                   │"
+    echo "│ 6) 🎆 Forçar Deploy via API (DEBUG)                        │"
+    echo "│    Testa deploy direto via API com debug detalhado         │"
+    echo "│                                                              │"
+    echo "│ 7) ❌ Sair                                                   │"
     echo "└──────────────────────────────────────────────────────────────┘"
     echo ""
 }
@@ -539,7 +608,7 @@ if [ $# -eq 0 ]; then
     # Modo menu interativo
     while true; do
         mostrar_menu
-        read -p "Digite sua opção (1-6): " opcao
+        read -p "Digite sua opção (1-7): " opcao
         
         case $opcao in
             1)
@@ -577,6 +646,12 @@ if [ $# -eq 0 ]; then
                 read
                 ;;
             6)
+                forcar_deploy_api_debug
+                echo ""
+                echo "Pressione Enter para voltar ao menu..."
+                read
+                ;;
+            7)
                 log_info "Saindo..."
                 exit 0
                 ;;
@@ -906,8 +981,18 @@ deploy_via_portainer_api() {
         \"StackFileContent\": $escaped_content
     }"
     
-    # Debug: mostrar payload (apenas primeiras linhas)
-    echo "Payload (primeiras linhas):" | head -3
+    # Testar se o token ainda é válido
+    local test_response=$(curl -sk -H "Authorization: Bearer $jwt_token" "$portainer_url/api/users/admin/check" 2>/dev/null)
+    if [ "$test_response" != "true" ]; then
+        log_warning "⚠️ Token JWT inválido ou expirado"
+        docker stack deploy --prune --resolve-image always -c "$yaml_file" "$stack_name"
+        return 1
+    fi
+    
+    # Debug: mostrar informações
+    echo "Endpoint ID: $endpoint_id"
+    echo "URL: $portainer_url/api/stacks?type=1&method=string&endpointId=$endpoint_id"
+    echo "Tamanho do payload: $(echo "$json_payload" | wc -c) caracteres"
     
     # Deploy via API
     local response=$(curl -sk -X POST \
@@ -917,13 +1002,25 @@ deploy_via_portainer_api() {
         -d "$json_payload" 2>&1)
     
     # Debug: mostrar resposta
+    echo "Status HTTP: $(curl -sk -o /dev/null -w '%{http_code}' -X POST "$portainer_url/api/stacks?type=1&method=string&endpointId=$endpoint_id" -H "Authorization: Bearer $jwt_token" -H "Content-Type: application/json" -d "$json_payload" 2>/dev/null)"
     echo "Resposta da API: $response"
     
+    # Verificar se houve sucesso
     if echo "$response" | grep -q "\"Id\"\|\"Name\""; then
         log_success "✅ $stack_name deployada com controle TOTAL!"
         return 0
+    elif echo "$response" | grep -q "error\|Error\|invalid\|unauthorized"; then
+        log_warning "⚠️ Erro na API: $(echo "$response" | head -100)"
+        log_warning "⚠️ Fallback: deployando via CLI"
+        docker stack deploy --prune --resolve-image always -c "$yaml_file" "$stack_name"
+        return 1
+    elif [ -z "$response" ]; then
+        log_warning "⚠️ API retornou resposta vazia (possível timeout)"
+        log_warning "⚠️ Fallback: deployando via CLI"
+        docker stack deploy --prune --resolve-image always -c "$yaml_file" "$stack_name"
+        return 1
     else
-        log_warning "⚠️ API falhou. Resposta: $(echo "$response" | head -200)"
+        log_warning "⚠️ Resposta inesperada da API: $(echo "$response" | head -100)"
         log_warning "⚠️ Fallback: deployando via CLI"
         docker stack deploy --prune --resolve-image always -c "$yaml_file" "$stack_name"
         return 1
