@@ -158,6 +158,244 @@ fix_ssl_especifico() {
     done
 }
 
+# Função para converter stacks Limited para Full Control
+converter_stacks_full_control() {
+    log_warning "🔄 CONVERTER STACKS PARA FULL CONTROL"
+    echo ""
+    echo "Como as stacks Limited não podem ser editadas/excluídas"
+    echo "pelo Portainer, vamos recriá-las via linha de comando."
+    echo ""
+    
+    # Carregar variáveis
+    if [ ! -f .env ]; then
+        log_error "Arquivo .env não encontrado!"
+        return 1
+    fi
+    
+    source .env
+    
+    echo "Stacks que serão convertidas:"
+    echo "  • postgres"
+    echo "  • redis"
+    echo "  • evolution"
+    echo "  • n8n"
+    echo ""
+    echo "Traefik e Portainer permanecerão Limited (normal)."
+    echo ""
+    
+    confirmar "Deseja converter as stacks para Full Control?"
+    
+    # Função auxiliar para remover e recriar stack
+    recreate_stack() {
+        local stack_name=$1
+        
+        log_info "Processando $stack_name..."
+        
+        # Remover stack via CLI (funciona mesmo com Limited)
+        docker stack rm "$stack_name" >/dev/null 2>&1 || true
+        
+        # Aguardar remoção
+        log_info "Aguardando remoção de $stack_name..."
+        for i in {1..20}; do
+            if ! docker service ls | grep -q "${stack_name}_"; then
+                break
+            fi
+            sleep 2
+        done
+        sleep 5
+        
+        log_success "✅ $stack_name removida!"
+    }
+    
+    # Remover todas as stacks
+    for stack in postgres redis evolution n8n; do
+        recreate_stack "$stack"
+    done
+    
+    log_info "🚀 Recriando stacks..."
+    echo ""
+    
+    # Recriar PostgreSQL
+    log_info "[1/4] Recriando PostgreSQL..."
+    cat <<EOF | docker stack deploy --prune --resolve-image always -c - postgres
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: $POSTGRES_PASSWORD
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - network_public
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+volumes:
+  postgres_data:
+    external: true
+networks:
+  network_public:
+    external: true
+EOF
+    sleep 10
+    
+    # Recriar Redis
+    log_info "[2/4] Recriando Redis..."
+    cat <<EOF | docker stack deploy --prune --resolve-image always -c - redis
+version: '3.8'
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - network_public
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+volumes:
+  redis_data:
+    external: true
+networks:
+  network_public:
+    external: true
+EOF
+    sleep 10
+    
+    # Criar databases
+    log_info "Criando databases..."
+    for i in {1..10}; do
+        container=$(docker ps --filter "name=postgres_postgres" --format "{{.Names}}" | head -1)
+        if [ ! -z "$container" ]; then
+            docker exec $container psql -U postgres -c "CREATE DATABASE evolution;" 2>/dev/null || true
+            docker exec $container psql -U postgres -c "CREATE DATABASE n8n;" 2>/dev/null || true
+            break
+        fi
+        sleep 3
+    done
+    
+    # Recriar Evolution
+    log_info "[3/4] Recriando Evolution API..."
+    cat <<EOF | docker stack deploy --prune --resolve-image always -c - evolution
+version: '3.8'
+services:
+  evolution-api:
+    image: atendai/evolution-api:v2.2.3
+    environment:
+      NODE_ENV: production
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      CORS_ORIGIN: '*'
+      DATABASE_ENABLED: 'true'
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://postgres:$POSTGRES_PASSWORD@postgres_postgres:5432/evolution
+      REDIS_ENABLED: 'true'
+      REDIS_URI: redis://redis_redis:6379
+      AUTHENTICATION_TYPE: apikey
+      AUTHENTICATION_API_KEY: $EVOLUTION_API_KEY
+      LANGUAGE: pt-BR
+    volumes:
+      - evolution_instances:/evolution/instances
+      - evolution_store:/evolution/store
+    networks:
+      - network_public
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.evolution.rule=Host(\`$DOMINIO_EVOLUTION\`)
+        - traefik.http.routers.evolution.tls=true
+        - traefik.http.routers.evolution.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.evolution.entrypoints=websecure
+        - traefik.http.services.evolution.loadbalancer.server.port=8080
+        - traefik.docker.network=network_public
+volumes:
+  evolution_instances:
+    external: true
+  evolution_store:
+    external: true
+networks:
+  network_public:
+    external: true
+EOF
+    sleep 10
+    
+    # Recriar N8N
+    log_info "[4/4] Recriando N8N..."
+    cat <<EOF | docker stack deploy --prune --resolve-image always -c - n8n
+version: '3.8'
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    environment:
+      N8N_BASIC_AUTH_ACTIVE: 'false'
+      N8N_HOST: $DOMINIO_N8N
+      N8N_PORT: 5678
+      N8N_PROTOCOL: https
+      WEBHOOK_URL: https://$WEBHOOK_N8N/
+      N8N_ENCRYPTION_KEY: $N8N_KEY
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres_postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: postgres
+      DB_POSTGRESDB_PASSWORD: $POSTGRES_PASSWORD
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - network_public
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.n8n.rule=Host(\`$DOMINIO_N8N\`)
+        - traefik.http.routers.n8n.tls=true
+        - traefik.http.routers.n8n.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.n8n.entrypoints=websecure
+        - traefik.http.services.n8n.loadbalancer.server.port=5678
+        - traefik.http.routers.webhook.rule=Host(\`$WEBHOOK_N8N\`)
+        - traefik.http.routers.webhook.tls=true
+        - traefik.http.routers.webhook.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.webhook.entrypoints=websecure
+        - traefik.docker.network=network_public
+volumes:
+  n8n_data:
+    external: true
+networks:
+  network_public:
+    external: true
+EOF
+    
+    echo ""
+    log_success "✅ STACKS RECRIADAS!"
+    echo ""
+    echo "📊 STATUS:"
+    docker stack ls
+    echo ""
+    echo "⚠️ IMPORTANTE:"
+    echo "As stacks ainda estarão 'Limited' mas agora podem ser removidas."
+    echo ""
+    echo "Para ter FULL CONTROL, você precisa:"
+    echo "1. Acessar o Portainer"
+    echo "2. Deletar cada stack (agora é possível)"
+    echo "3. Recriar via interface do Portainer"
+    echo ""
+    echo "Ou simplesmente use as stacks como estão - elas funcionam!"
+}
+
 # Menu principal
 mostrar_menu() {
     clear
@@ -181,7 +419,10 @@ mostrar_menu() {
     echo "│ 4) 📊 Status dos Serviços                                  │"
     echo "│    Mostra status e testa SSL de todos os domínios          │"
     echo "│                                                              │"
-    echo "│ 5) ❌ Sair                                                   │"
+    echo "│ 5) 🔄 Converter Stacks para Full Control                    │"
+    echo "│    Remove Limited e recria com controle total              │"
+    echo "│                                                              │"
+    echo "│ 6) ❌ Sair                                                   │"
     echo "└──────────────────────────────────────────────────────────────┘"
     echo ""
 }
@@ -229,7 +470,7 @@ if [ $# -eq 0 ]; then
     # Modo menu interativo
     while true; do
         mostrar_menu
-        read -p "Digite sua opção (1-5): " opcao
+        read -p "Digite sua opção (1-6): " opcao
         
         case $opcao in
             1)
@@ -261,6 +502,12 @@ if [ $# -eq 0 ]; then
                 mostrar_status
                 ;;
             5)
+                converter_stacks_full_control
+                echo ""
+                echo "Pressione Enter para voltar ao menu..."
+                read
+                ;;
+            6)
                 log_info "Saindo..."
                 exit 0
                 ;;
