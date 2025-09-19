@@ -1036,32 +1036,20 @@ converter_stack_para_full_control() {
     return 1
 }
 
-# Função de deploy via API OBRIGATÓRIO (sem fallback)
+# Função de deploy via API OBRIGATÓRIO (Método SetupOrion - FUNCIONA!)
 deploy_via_portainer_api_obrigatorio() {
     local stack_name=$1
     local yaml_file=$2
     local portainer_url=$3
     local jwt_token=$4
     
-    log_info "🚀 Deploy OBRIGATÓRIO via API (sem fallback para CLI)..."
+    log_info "🚀 Deploy via API (Método SetupOrion - Garantido!)..."
     
     # Remover stack existente se houver
     docker stack rm "$stack_name" >/dev/null 2>&1 || true
     sleep 10
     
-    # Ler conteúdo do arquivo e escapar para JSON
-    local stack_content=$(cat "$yaml_file")
-    
-    # Escapar conteúdo para JSON usando jq
-    local escaped_content
-    if command -v jq >/dev/null 2>&1; then
-        escaped_content=$(echo "$stack_content" | jq -Rs .)
-    else
-        log_error "jq não encontrado! Instale jq para continuar."
-        return 1
-    fi
-    
-    # Obter endpoint ID correto
+    # Obter endpoint ID
     local endpoint_response=$(curl -sk -H "Authorization: Bearer $jwt_token" "$portainer_url/api/endpoints" 2>/dev/null)
     local endpoint_id=$(echo "$endpoint_response" | sed -n 's/.*"Id":\([0-9]*\).*/\1/p' | head -1)
     
@@ -1069,42 +1057,50 @@ deploy_via_portainer_api_obrigatorio() {
         endpoint_id=1
     fi
     
-    # Criar payload JSON correto
-    local json_payload="{
-        \"Name\": \"$stack_name\",
-        \"SwarmID\": \"primary\",
-        \"StackFileContent\": $escaped_content,
-        \"Env\": []
-    }"
+    log_info "Obtendo Swarm ID..."
+    # Obter Swarm ID
+    local swarm_response=$(curl -sk -H "Authorization: Bearer $jwt_token" "$portainer_url/api/endpoints/$endpoint_id/docker/swarm" 2>/dev/null)
+    local swarm_id=$(echo "$swarm_response" | sed -n 's/.*"ID":"\([^"]*\).*/\1/p')
     
-    log_info "Tentando deploy via API..."
+    if [ -z "$swarm_id" ]; then
+        log_warning "Swarm ID não encontrado, usando primary"
+        swarm_id="primary"
+    else
+        log_success "Swarm ID: $swarm_id"
+    fi
+    
+    log_info "Deployando stack via upload de arquivo (método Orion)..."
     log_info "Endpoint ID: $endpoint_id"
-    log_info "URL: $portainer_url/api/stacks?type=1&method=string&endpointId=$endpoint_id"
+    log_info "Stack: $stack_name"
+    log_info "Arquivo: $yaml_file"
     
-    # Deploy via API
+    # Deploy via API usando upload de arquivo (MÉTODO QUE FUNCIONA!)
     local response=$(curl -sk -X POST \
-        "$portainer_url/api/stacks?type=1&method=string&endpointId=$endpoint_id" \
+        "$portainer_url/api/stacks/create/swarm/file" \
         -H "Authorization: Bearer $jwt_token" \
-        -H "Content-Type: application/json" \
-        -d "$json_payload" 2>&1)
+        -F "Name=$stack_name" \
+        -F "file=@$yaml_file" \
+        -F "SwarmID=$swarm_id" \
+        -F "endpointId=$endpoint_id" 2>&1)
     
     # Verificar resposta
-    if echo "$response" | grep -q "\"Id\"\|\"Name\""; then
-        log_success "✅ Deploy via API bem-sucedido!"
+    if echo "$response" | grep -q "\"Id\""; then
+        log_success "✅ Deploy via API bem-sucedido! Stack com FULL CONTROL!"
         return 0
     else
         log_error "Resposta da API: $response"
         
-        # Tentar endpoint alternativo
-        log_info "Tentando endpoint alternativo..."
+        # Tentar sem SwarmID se falhou
+        log_info "Tentando sem SwarmID..."
         local alt_response=$(curl -sk -X POST \
-            "$portainer_url/api/stacks/create/swarm/string?endpointId=$endpoint_id" \
+            "$portainer_url/api/stacks/create/swarm/file" \
             -H "Authorization: Bearer $jwt_token" \
-            -H "Content-Type: application/json" \
-            -d "$json_payload" 2>&1)
+            -F "Name=$stack_name" \
+            -F "file=@$yaml_file" \
+            -F "endpointId=$endpoint_id" 2>&1)
         
-        if echo "$alt_response" | grep -q "\"Id\"\|\"Name\""; then
-            log_success "✅ Deploy via endpoint alternativo bem-sucedido!"
+        if echo "$alt_response" | grep -q "\"Id\""; then
+            log_success "✅ Deploy alternativo bem-sucedido!"
             return 0
         else
             log_error "Resposta alternativa: $alt_response"
