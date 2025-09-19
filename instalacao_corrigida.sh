@@ -359,7 +359,7 @@ networks:
     EVOLUTION_YAML="version: '3.8'
 services:
   evolution-api:
-    image: atendai/evolution-api:v2.2.3
+    image: atendai/evolution-api:latest
     environment:
       NODE_ENV: production
       SERVER_TYPE: http
@@ -1036,14 +1036,14 @@ converter_stack_para_full_control() {
     return 1
 }
 
-# Função de deploy via API OBRIGATÓRIO (Método SetupOrion - FUNCIONA!)
+# Função de deploy via API OBRIGATÓRIO com Full Control
 deploy_via_portainer_api_obrigatorio() {
     local stack_name=$1
     local yaml_file=$2
     local portainer_url=$3
     local jwt_token=$4
     
-    log_info "🚀 Deploy via API (Método SetupOrion - Garantido!)..."
+    log_info "🚀 Deploy via API com Full Control..."
     
     # Remover stack existente se houver
     docker stack rm "$stack_name" >/dev/null 2>&1 || true
@@ -1069,7 +1069,7 @@ deploy_via_portainer_api_obrigatorio() {
         log_success "Swarm ID: $swarm_id"
     fi
     
-    log_info "Deployando stack via upload de arquivo (método Orion)..."
+    log_info "Deployando stack via upload de arquivo..."
     log_info "Endpoint ID: $endpoint_id"
     log_info "Stack: $stack_name"
     log_info "Arquivo: $yaml_file"
@@ -1646,7 +1646,7 @@ version: '3.7'
 
 services:
   evolution-api:
-    image: atendai/evolution-api:v2.2.3
+    image: atendai/evolution-api:latest
     networks:
       - network_public
     environment:
@@ -1881,10 +1881,10 @@ for domain in "$DOMINIO_PORTAINER" "$DOMINIO_N8N" "$DOMINIO_EVOLUTION" "$WEBHOOK
 done
 
 # VERIFICAÇÃO FINAL COMPLETA
-echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║                    INSTALAÇÃO CONCLUÍDA                     ║"
-echo "║                       SETUP ALICIA                        ║"
-echo "╚══════════════════════════════════════════════════════════════╝"
+echo "╔══════════════════════════════════════════════════════════════════╗"
+echo "║           INSTALAÇÃO CONCLUÍDA - PREMIUM v1.0              ║"
+echo "║              EXCLUSIVO ALUNOS AUTOMAÇÃO                   ║"
+echo "╚══════════════════════════════════════════════════════════════════╝"
 
 all_perfect=true
 
@@ -1897,53 +1897,38 @@ echo "🐳 CONTAINERS ATIVOS:"
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
 echo ""
-echo "🔐 VERIFICAÇÃO SSL:"
-
-# Testar HTTPS para cada serviço
-for domain in "$DOMINIO_PORTAINER" "$DOMINIO_N8N" "$DOMINIO_EVOLUTION"; do
-    echo "🔍 Testando SSL para $domain..."
-    
-    # Testar HTTPS
-    if curl -s -I "https://$domain" 2>/dev/null | grep -q "HTTP.*200\|HTTP.*301\|HTTP.*302\|HTTP.*404"; then
-        log_success "✅ $domain: SSL FUNCIONANDO"
-    else
-        log_warning "⚠️ $domain: SSL ainda sendo gerado (aguarde alguns minutos)"
-    fi
-done
-
-echo ""
 echo "=========================================="
-echo "🎉 INSTALAÇÃO CORRIGIDA CONCLUÍDA!"
+echo "          SERVIÇOS DISPONÍVEIS"
 echo "=========================================="
 echo ""
-echo "┌──────────────────────────────────────────────────────────────┐"
-echo "│                        SERVIÇOS DISPONÍVEIS                        │"
-echo "├──────────────────────────────────────────────────────────────┤"
-echo "│ 🐳 Portainer: https://$DOMINIO_PORTAINER"
-echo "│ 🔄 N8N: https://$DOMINIO_N8N"
-echo "│ 📱 Evolution API: https://$DOMINIO_EVOLUTION"
-echo "│ 🔧 Evolution Manager: https://$DOMINIO_EVOLUTION/manager"
-echo "│ 🔗 Webhook N8N: https://$WEBHOOK_N8N"
-echo "└──────────────────────────────────────────────────────────────┘"
+echo "🐳 Portainer: https://$DOMINIO_PORTAINER"
+echo "🔄 N8N: https://$DOMINIO_N8N"
+echo "📱 Evolution API: https://$DOMINIO_EVOLUTION"
+echo "🔧 Evolution Manager: https://$DOMINIO_EVOLUTION/manager"
+echo "🔗 Webhook N8N: https://$WEBHOOK_N8N"
 echo ""
-echo "┌──────────────────────────────────────────────────────────────┐"
-echo "│                      CREDENCIAIS DE ACESSO                      │"
-echo "├──────────────────────────────────────────────────────────────┤"
-echo "│ 👤 Portainer Admin: $PORTAINER_ADMIN_USER"
-echo "│ 🔑 Portainer Senha: $PORTAINER_ADMIN_PASSWORD"
-echo "│ 🔑 Evolution API Key: $EVOLUTION_API_KEY"
-echo "│ 🗿 PostgreSQL Password: $POSTGRES_PASSWORD"
-echo "│ 🔐 N8N Encryption Key: $N8N_KEY"
-echo "└──────────────────────────────────────────────────────────────┘"
+echo "=========================================="
+echo "        CREDENCIAIS DE ACESSO"
+echo "=========================================="
 echo ""
-echo "┌──────────────────────────────────────────────────────────────┐"
-echo "│                        INFORMAÇÕES IMPORTANTES                    │"
-echo "├──────────────────────────────────────────────────────────────┤"
-echo "│ • SSL processado automaticamente em background               │"
-echo "│ • Redirecionamento HTTP→HTTPS ativo                          │"
-echo "│ • ✅ Portainer admin criado automaticamente                 │"
-echo "│ • 🔑 Configure conta administrador no N8N                   │"
-echo "│ • IP do servidor: $server_ip                    │"
-echo "└──────────────────────────────────────────────────────────────┘"
+echo "👤 Portainer Admin: admin"
+echo "🔑 Portainer Senha: $PORTAINER_ADMIN_PASSWORD"
+echo "🔑 Evolution API Key: $EVOLUTION_API_KEY"
+echo "🗿 PostgreSQL Password: $POSTGRES_PASSWORD"
+echo "🔐 N8N Encryption Key: $N8N_KEY"
 echo ""
-echo "🎉 Instalação concluída com sucesso!"
+echo "=========================================="
+echo "       INFORMAÇÕES IMPORTANTES"
+echo "=========================================="
+echo ""
+echo "• SSL processado automaticamente em background"
+echo "• Redirecionamento HTTP→HTTPS ativo"
+echo "• ✅ Portainer admin criado automaticamente"
+echo "• 🔑 Configure conta administrador no N8N"
+echo "• IP do servidor: $server_ip"
+echo ""
+echo "=========================================="
+echo " 🌐 Comunidade: https://comunidade.agentealicia.digital"
+echo "=========================================="
+echo ""
+echo "🎆 Instalação Premium v1.0 concluída com sucesso!"
