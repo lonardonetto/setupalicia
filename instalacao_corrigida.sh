@@ -1762,15 +1762,17 @@ echo "│ ⚡ Status da API: GET https://$DOMINIO_EVOLUTION/             │"
 echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
 
-# 6. INSTALAR N8N (MODO QUEUE - ESCALÁVEL)
+# 6. INSTALAR N8N (3 STACKS INDEPENDENTES)
 echo ""
 echo "┌──────────────────────────────────────────────────────────────────┐"
-echo "│            ETAPA 6/6 - INSTALANDO N8N ESCALÁVEL              │"
+echo "│         ETAPA 6/6 - INSTALANDO N8N (3 STACKS)                │"
 echo "└──────────────────────────────────────────────────────────────────┘"
-log_info "🔄 Configurando N8N em modo Queue (Main + Worker + Webhook)..."
-log_info "🚀 Deploy escalável com alta disponibilidade..."
+log_info "🔄 Configurando N8N em 3 stacks independentes..."
+log_info "📦 Deploy separado: n8n-main, n8n-worker, n8n-webhook..."
 
-cat > n8n_corrigida.yaml <<EOF
+# Stack 1: N8N MAIN (Editor/Interface)
+log_info "1/3 - Criando stack n8n-main (Interface Web)..."
+cat > n8n-main.yaml <<EOF
 version: '3.7'
 
 services:
@@ -1832,7 +1834,28 @@ services:
         - traefik.http.routers.n8n-main-redirect.middlewares=redirect-to-https
         - traefik.docker.network=network_public
 
-  # N8N WORKER - Processamento de Workflows
+volumes:
+  n8n_data:
+    external: true
+
+networks:
+  network_public:
+    external: true
+EOF
+
+docker volume create n8n_data >/dev/null 2>&1
+
+# Deploy da stack n8n-main
+log_info "🚀 Deployando n8n-main..."
+deploy_obrigatorio_full_control "n8n-main" "n8n-main.yaml"
+wait_service_perfect "n8n-main" 180
+
+# Stack 2: N8N WORKER (Processamento)
+log_info "2/3 - Criando stack n8n-worker (Processamento)..."
+cat > n8n-worker.yaml <<EOF
+version: '3.7'
+
+services:
   n8n-worker:
     image: n8nio/n8n:latest
     command: worker
@@ -1869,7 +1892,26 @@ services:
         reservations:
           memory: 512M
 
-  # N8N WEBHOOK - Receptor de Webhooks
+volumes:
+  n8n_data:
+    external: true
+
+networks:
+  network_public:
+    external: true
+EOF
+
+# Deploy da stack n8n-worker  
+log_info "🚀 Deployando n8n-worker..."
+deploy_obrigatorio_full_control "n8n-worker" "n8n-worker.yaml"
+wait_service_perfect "n8n-worker" 120
+
+# Stack 3: N8N WEBHOOK (Recepção)
+log_info "3/3 - Criando stack n8n-webhook (Webhooks)..."
+cat > n8n-webhook.yaml <<EOF
+version: '3.7'
+
+services:
   n8n-webhook:
     image: n8nio/n8n:latest
     command: webhook
@@ -1930,11 +1972,10 @@ networks:
     external: true
 EOF
 
-docker volume create n8n_data >/dev/null 2>&1
-
-# Deploy OBRIGATÓRIO via API - Full Control garantido
-deploy_obrigatorio_full_control "n8n" "n8n_corrigida.yaml"
-wait_service_perfect "n8n" 300
+# Deploy da stack n8n-webhook
+log_info "🚀 Deployando n8n-webhook..."
+deploy_obrigatorio_full_control "n8n-webhook" "n8n-webhook.yaml"
+wait_service_perfect "n8n-webhook" 120
 
 # Verificar SSL do N8N e Webhook imediatamente
 check_ssl_simple "$DOMINIO_N8N" "N8N"
@@ -1942,17 +1983,21 @@ check_ssl_simple "$WEBHOOK_N8N" "Webhook N8N"
 
 echo ""
 echo "┌──────────────────────────────────────────────────────────────────┐"
-echo "│              ⚠️  IMPORTANTE - N8N MODO QUEUE                     │"
+echo "│           ⚠️  IMPORTANTE - N8N (3 STACKS SEPARADAS)              │"
 echo "├──────────────────────────────────────────────────────────────────┤"
 echo "│ 🌐 Interface Web: https://$DOMINIO_N8N                   │"
 echo "│ 🎆 Webhook dedicado: https://$WEBHOOK_N8N         │"
-echo "│ 🚀 Arquitetura: 1 Main + 2 Workers + 2 Webhooks         │"
+echo "│ 📦 3 Stacks no Portainer:                                 │"
+echo "│    • n8n-main: Interface/Editor (1 réplica)               │"
+echo "│    • n8n-worker: Processamento (2 réplicas)               │"
+echo "│    • n8n-webhook: Recepção webhooks (2 réplicas)          │"
 echo "│ 🔑 PRIMEIRA VEZ: Criar conta de administrador              │"
 echo "│ 📄 Backup do Encryption Key salvo em .env                 │"
 echo "│ ⚠️  Encryption Key: Não perca, necessária para recuperação  │"
 echo "└──────────────────────────────────────────────────────────────────┘"
-log_info "🔄 N8N deployado em modo Queue para alta performance!"
-log_success "✅ 3 componentes: Main (UI) + Workers (processamento) + Webhooks (recepção)"
+log_info "🔄 N8N deployado em 3 stacks independentes!"
+log_success "✅ Stacks criadas: n8n-main, n8n-worker, n8n-webhook"
+log_success "✅ Todas com Full Control no Portainer!"
 echo ""
 
 # VERIFICAÇÃO FINAL DE SSL
