@@ -1684,7 +1684,10 @@ services:
       - SERVER_URL=https://$DOMINIO_EVOLUTION
       - CONFIG_SESSION_PHONE_CLIENT=Premium
       - CONFIG_SESSION_PHONE_NAME=Chrome
-      - CONFIG_SESSION_PHONE_VERSION=2.3000.1015901307
+      # IMPORTANTE: Atualize a versão do WhatsApp Web regularmente
+      # Pegue a versão mais recente em: https://wppconnect.io/pt-BR/whatsapp-versions/
+      # Para atualizar: No Portainer > Stack evolution > Editor > Atualize abaixo > Update Stack
+      - CONFIG_SESSION_PHONE_VERSION=2.3000.1027381369
       - LANGUAGE=pt-BR
       - WEBHOOK_GLOBAL_URL=
       - WEBHOOK_GLOBAL_ENABLED=false
@@ -1758,9 +1761,18 @@ echo "│ 🌐 Acesse: https://$DOMINIO_EVOLUTION                       │"
 echo "│ 🔧 Painel Admin: https://$DOMINIO_EVOLUTION/manager             │"
 echo "│ 🔑 API Key: $EVOLUTION_API_KEY"
 echo "│ 📱 Para conectar WhatsApp: POST /instance/create          │"
-echo "│ 🗃️ Documentação: https://$DOMINIO_EVOLUTION/docs           │"
+echo "│ 🗿️ Documentação: https://$DOMINIO_EVOLUTION/docs           │"
 echo "│ ⚡ Status da API: GET https://$DOMINIO_EVOLUTION/             │"
-echo "└──────────────────────────────────────────────────────────────┘"
+echo "├──────────────────────────────────────────────────────────────────┤"
+echo "│ 🔄 ATUALIZAÇÃO DA VERSÃO DO WHATSAPP WEB:                  │"
+echo "│ 🌐 Site: https://wppconnect.io/pt-BR/whatsapp-versions/     │"
+echo "│ 🔧 Como atualizar:                                        │"
+echo "│    1. Acesse o site acima e copie a versão mais recente    │"
+echo "│    2. No Portainer > Stacks > evolution > Editor           │"
+echo "│    3. Procure: CONFIG_SESSION_PHONE_VERSION                │"
+echo "│    4. Atualize o valor e clique em 'Update Stack'          │"
+echo "│ 📢 Versão atual instalada: 2.3000.1027381369               │"
+echo "└──────────────────────────────────────────────────────────────────┘"
 echo ""
 
 # 6. INSTALAR N8N (3 STACKS INDEPENDENTES)
