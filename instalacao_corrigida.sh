@@ -1770,6 +1770,10 @@ echo "└───────────────────────�
 log_info "🔄 Configurando N8N em 3 stacks independentes..."
 log_info "📦 Deploy separado: n8n-main, n8n-worker, n8n-webhook..."
 
+# Criar volume compartilhado ANTES de todas as stacks
+log_info "Criando volume compartilhado n8n_data..."
+docker volume create n8n_data >/dev/null 2>&1
+
 # Stack 1: N8N MAIN (Editor/Interface)
 log_info "1/3 - Criando stack n8n-main (Interface Web)..."
 cat > n8n-main.yaml <<EOF
@@ -1816,9 +1820,9 @@ services:
         window: 120s
       resources:
         limits:
-          memory: 2G
-        reservations:
           memory: 1G
+        reservations:
+          memory: 256M
       labels:
         - traefik.enable=true
         # HTTPS Router N8N Main
@@ -1842,8 +1846,6 @@ networks:
   network_public:
     external: true
 EOF
-
-docker volume create n8n_data >/dev/null 2>&1
 
 # Deploy da stack n8n-main
 log_info "🚀 Deployando n8n-main..."
@@ -1888,9 +1890,9 @@ services:
         window: 120s
       resources:
         limits:
-          memory: 1G
-        reservations:
           memory: 512M
+        reservations:
+          memory: 128M
 
 volumes:
   n8n_data:
@@ -1946,9 +1948,9 @@ services:
         window: 120s
       resources:
         limits:
-          memory: 512M
-        reservations:
           memory: 256M
+        reservations:
+          memory: 128M
       labels:
         - traefik.enable=true
         # HTTPS Router Webhook
