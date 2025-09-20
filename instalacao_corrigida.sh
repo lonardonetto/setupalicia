@@ -1762,20 +1762,27 @@ echo "│ ⚡ Status da API: GET https://$DOMINIO_EVOLUTION/             │"
 echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
 
-# 6. INSTALAR N8N
+# 6. INSTALAR N8N (MODO QUEUE - ESCALÁVEL)
 echo ""
-echo "┌──────────────────────────────────────────────────────────────┐"
-echo "│                 ETAPA 6/6 - INSTALANDO N8N                    │"
-echo "└──────────────────────────────────────────────────────────────┘"
-log_info "🔄 Configurando automação de workflows..."
+echo "┌──────────────────────────────────────────────────────────────────┐"
+echo "│            ETAPA 6/6 - INSTALANDO N8N ESCALÁVEL              │"
+echo "└──────────────────────────────────────────────────────────────────┘"
+log_info "🔄 Configurando N8N em modo Queue (Main + Worker + Webhook)..."
+log_info "🚀 Deploy escalável com alta disponibilidade..."
 
 cat > n8n_corrigida.yaml <<EOF
 version: '3.7'
 
 services:
-  n8n:
+  # N8N MAIN - Interface Web Principal
+  n8n-main:
     image: n8nio/n8n:latest
     environment:
+      - N8N_MODE=main
+      - EXECUTIONS_MODE=queue
+      - QUEUE_BULL_REDIS_HOST=redis_redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - QUEUE_HEALTH_CHECK_ACTIVE=true
       - N8N_BASIC_AUTH_ACTIVE=false
       - N8N_HOST=$DOMINIO_N8N
       - N8N_PORT=5678
@@ -1812,27 +1819,107 @@ services:
           memory: 1G
       labels:
         - traefik.enable=true
-        # HTTPS Router N8N
-        - traefik.http.routers.n8n.rule=Host(\`$DOMINIO_N8N\`)
-        - traefik.http.routers.n8n.tls=true
-        - traefik.http.routers.n8n.tls.certresolver=letsencryptresolver
-        - traefik.http.routers.n8n.entrypoints=websecure
-        - traefik.http.services.n8n.loadbalancer.server.port=5678
-        - traefik.http.routers.n8n.service=n8n
+        # HTTPS Router N8N Main
+        - traefik.http.routers.n8n-main.rule=Host(\`$DOMINIO_N8N\`)
+        - traefik.http.routers.n8n-main.tls=true
+        - traefik.http.routers.n8n-main.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.n8n-main.entrypoints=websecure
+        - traefik.http.services.n8n-main.loadbalancer.server.port=5678
+        - traefik.http.routers.n8n-main.service=n8n-main
         # HTTP Redirect para HTTPS
-        - traefik.http.routers.n8n-redirect.rule=Host(\`$DOMINIO_N8N\`)
-        - traefik.http.routers.n8n-redirect.entrypoints=web
-        - traefik.http.routers.n8n-redirect.middlewares=redirect-to-https
+        - traefik.http.routers.n8n-main-redirect.rule=Host(\`$DOMINIO_N8N\`)
+        - traefik.http.routers.n8n-main-redirect.entrypoints=web
+        - traefik.http.routers.n8n-main-redirect.middlewares=redirect-to-https
+        - traefik.docker.network=network_public
+
+  # N8N WORKER - Processamento de Workflows
+  n8n-worker:
+    image: n8nio/n8n:latest
+    command: worker
+    environment:
+      - N8N_MODE=worker
+      - EXECUTIONS_MODE=queue
+      - QUEUE_BULL_REDIS_HOST=redis_redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - QUEUE_HEALTH_CHECK_ACTIVE=true
+      - NODE_ENV=production
+      - GENERIC_TIMEZONE=America/Sao_Paulo
+      - N8N_ENCRYPTION_KEY=$N8N_KEY
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres_postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=postgres
+      - DB_POSTGRESDB_PASSWORD=$POSTGRES_PASSWORD
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - network_public
+    deploy:
+      mode: replicated
+      replicas: 2  # 2 workers para processamento paralelo
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  # N8N WEBHOOK - Receptor de Webhooks
+  n8n-webhook:
+    image: n8nio/n8n:latest
+    command: webhook
+    environment:
+      - N8N_MODE=webhook
+      - EXECUTIONS_MODE=queue
+      - QUEUE_BULL_REDIS_HOST=redis_redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - QUEUE_HEALTH_CHECK_ACTIVE=true
+      - N8N_PROTOCOL=https
+      - WEBHOOK_URL=https://$WEBHOOK_N8N/
+      - NODE_ENV=production
+      - GENERIC_TIMEZONE=America/Sao_Paulo
+      - N8N_ENCRYPTION_KEY=$N8N_KEY
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres_postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=postgres
+      - DB_POSTGRESDB_PASSWORD=$POSTGRES_PASSWORD
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - network_public
+    deploy:
+      mode: replicated
+      replicas: 2  # 2 webhooks para alta disponibilidade
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+      labels:
+        - traefik.enable=true
         # HTTPS Router Webhook
-        - traefik.http.routers.webhook.rule=Host(\`$WEBHOOK_N8N\`)
-        - traefik.http.routers.webhook.tls=true
-        - traefik.http.routers.webhook.tls.certresolver=letsencryptresolver
-        - traefik.http.routers.webhook.entrypoints=websecure
-        - traefik.http.routers.webhook.service=n8n
+        - traefik.http.routers.n8n-webhook.rule=Host(\`$WEBHOOK_N8N\`)
+        - traefik.http.routers.n8n-webhook.tls=true
+        - traefik.http.routers.n8n-webhook.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.n8n-webhook.entrypoints=websecure
+        - traefik.http.services.n8n-webhook.loadbalancer.server.port=5678
+        - traefik.http.routers.n8n-webhook.service=n8n-webhook
         # HTTP Redirect Webhook para HTTPS
-        - traefik.http.routers.webhook-redirect.rule=Host(\`$WEBHOOK_N8N\`)
-        - traefik.http.routers.webhook-redirect.entrypoints=web
-        - traefik.http.routers.webhook-redirect.middlewares=redirect-to-https
+        - traefik.http.routers.n8n-webhook-redirect.rule=Host(\`$WEBHOOK_N8N\`)
+        - traefik.http.routers.n8n-webhook-redirect.entrypoints=web
+        - traefik.http.routers.n8n-webhook-redirect.middlewares=redirect-to-https
         - traefik.docker.network=network_public
 
 volumes:
@@ -1854,14 +1941,18 @@ check_ssl_simple "$DOMINIO_N8N" "N8N"
 check_ssl_simple "$WEBHOOK_N8N" "Webhook N8N"
 
 echo ""
-echo "┌──────────────────────────────────────────────────────────────┐"
-echo "│                  ⚠️  IMPORTANTE - N8N                           │"
-echo "├──────────────────────────────────────────────────────────────┤"
-echo "│ 🌐 Acesse: https://$DOMINIO_N8N                            │"
+echo "┌──────────────────────────────────────────────────────────────────┐"
+echo "│              ⚠️  IMPORTANTE - N8N MODO QUEUE                     │"
+echo "├──────────────────────────────────────────────────────────────────┤"
+echo "│ 🌐 Interface Web: https://$DOMINIO_N8N                   │"
+echo "│ 🎆 Webhook dedicado: https://$WEBHOOK_N8N         │"
+echo "│ 🚀 Arquitetura: 1 Main + 2 Workers + 2 Webhooks         │"
 echo "│ 🔑 PRIMEIRA VEZ: Criar conta de administrador              │"
-echo "│ 🚀 Configure workflows e automações                       │"
-echo "│ 🔗 Webhook: https://$WEBHOOK_N8N                          │"
-echo "└──────────────────────────────────────────────────────────────┘"
+echo "│ 📄 Backup do Encryption Key salvo em .env                 │"
+echo "│ ⚠️  Encryption Key: Não perca, necessária para recuperação  │"
+echo "└──────────────────────────────────────────────────────────────────┘"
+log_info "🔄 N8N deployado em modo Queue para alta performance!"
+log_success "✅ 3 componentes: Main (UI) + Workers (processamento) + Webhooks (recepção)"
 echo ""
 
 # VERIFICAÇÃO FINAL DE SSL
