@@ -805,18 +805,37 @@ if command -v ufw >/dev/null 2>&1; then
     log_success "✅ Firewall configurado!"
 fi
 
+# Função utilitária: aguardar liberação dos locks do APT/DPKG (até 10 min)
+wait_apt_locks() {
+    log_info "⏳ Aguardando liberação dos locks do APT/DPKG..."
+    local start_ts=$(date +%s)
+    local timeout=600  # 10 minutos
+    while true; do
+        if ! fuser /var/lib/dpkg/lock >/dev/null 2>&1 \
+           && ! fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 \
+           && ! fuser /var/lib/apt/lists/lock >/dev/null 2>&1 \
+           && ! fuser /var/cache/apt/archives/lock >/dev/null 2>&1 \
+           && ! pgrep -f "apt.systemd.daily|unattended|apt(-get)?|dpkg" >/dev/null 2>&1; then
+            break
+        fi
+        sleep 5
+        local now=$(date +%s)
+        if [ $((now - start_ts)) -gt $timeout ]; then
+            log_warning "⚠️ APT ainda ocupado após $((timeout/60)) min. Tentando 'dpkg --configure -a' e seguindo..."
+            dpkg --configure -a >> instalacao_corrigida.log 2>&1 || true
+            break
+        fi
+    done
+}
+
 # Atualizar sistema
 log_info "📦 Atualizando sistema..."
+wait_apt_locks
 {
     apt update -y &&
     apt upgrade -y &&
     apt-get install -y curl wget gnupg lsb-release ca-certificates apt-transport-https software-properties-common jq
 } >> instalacao_corrigida.log 2>&1
-
-# Aguardar liberação do lock do apt
-while fuser /var/lib/dpkg/lock >/dev/null 2>&1; do
-    sleep 5
-done
 
 # Configurar swap se necessário
 log_info "💾 Configurando swap..."
@@ -868,6 +887,7 @@ CODENAME=$(lsb_release -cs 2>/dev/null || (. /etc/os-release 2>/dev/null; echo "
 echo "deb [arch=$ARCH signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $CODENAME stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
 log_info "📦 Atualizando índices APT do Docker..."
+wait_apt_locks
 if ! apt-get update -y >> instalacao_corrigida.log 2>&1; then
     log_error "Falha ao atualizar índices APT do Docker. Consulte instalacao_corrigida.log (últimas linhas abaixo)."
     tail -n 120 instalacao_corrigida.log || true
