@@ -840,14 +840,46 @@ apt-get remove -y docker docker-engine docker.io containerd runc >/dev/null 2>&1
 
 # Instalar Docker mais recente
 log_info "🐋 Instalando Docker mais recente..."
-install -m 0755 -d /usr/share/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor --yes | tee /usr/share/keyrings/docker-archive-keyring.gpg > /dev/null
-chmod a+r /usr/share/keyrings/docker-archive-keyring.gpg
-ARCH=$(dpkg --print-architecture)
-echo "deb [arch=$ARCH signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+log_info "🔑 Preparando repositório do Docker..."
 
-apt-get update >/dev/null 2>&1
-apt-get install -y docker-ce docker-ce-cli containerd.io >/dev/null 2>&1
+# Garantir dependências essenciais
+if ! command -v gpg >/dev/null 2>&1 || ! command -v lsb_release >/dev/null 2>&1; then
+    log_info "📦 Instalando dependências (curl, gnupg, lsb-release, ca-certificates)..."
+    if ! apt-get update -y >> instalacao_corrigida.log 2>&1; then
+        log_error "Falha ao atualizar APT antes das dependências. Veja instalacao_corrigida.log (abaixo)."
+        tail -n 120 instalacao_corrigida.log || true
+        exit 1
+    fi
+    if ! apt-get install -y curl gnupg lsb-release ca-certificates >> instalacao_corrigida.log 2>&1; then
+        log_error "Falha ao instalar dependências. Veja instalacao_corrigida.log (abaixo)."
+        tail -n 120 instalacao_corrigida.log || true
+        exit 1
+    fi
+fi
+
+install -m 0755 -d /usr/share/keyrings
+if ! curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor --yes | tee /usr/share/keyrings/docker-archive-keyring.gpg > /dev/null; then
+    log_error "Falha ao importar a chave GPG do Docker. Verifique conectividade/permite." 
+    exit 1
+fi
+chmod a+r /usr/share/keyrings/docker-archive-keyring.gpg
+ARCH=$(dpkg --print-architecture || echo amd64)
+CODENAME=$(lsb_release -cs 2>/dev/null || (. /etc/os-release 2>/dev/null; echo "${VERSION_CODENAME:-focal}"))
+echo "deb [arch=$ARCH signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $CODENAME stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+log_info "📦 Atualizando índices APT do Docker..."
+if ! apt-get update -y >> instalacao_corrigida.log 2>&1; then
+    log_error "Falha ao atualizar índices APT do Docker. Consulte instalacao_corrigida.log (últimas linhas abaixo)."
+    tail -n 120 instalacao_corrigida.log || true
+    exit 1
+fi
+
+log_info "🐳 Instalando pacotes do Docker..."
+if ! apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >> instalacao_corrigida.log 2>&1; then
+    log_error "Falha ao instalar pacotes do Docker. Consulte instalacao_corrigida.log (últimas linhas abaixo)."
+    tail -n 120 instalacao_corrigida.log || true
+    exit 1
+fi
 
 # Configurar Docker
 systemctl enable docker
