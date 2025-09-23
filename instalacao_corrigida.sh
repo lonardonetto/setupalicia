@@ -807,7 +807,7 @@ fi
 
 # Função utilitária: aguardar liberação dos locks do APT/DPKG com barra de progresso (padrão 600s)
 wait_apt_locks() {
-    local timeout=${1:-600}
+    local timeout=${1:-300}
     log_info "⏳ Aguardando liberação dos locks do APT/DPKG (máx ${timeout}s)..."
 
     # Pausar timers/serviços para agilizar a liberação
@@ -836,9 +836,9 @@ wait_apt_locks() {
         local bar="$(printf '%0.s#' $(seq 1 $filled))$(printf '%0.s-' $(seq 1 $empty))"
         echo -ne "\r⏳ APT ocupado: [${bar}] ${percent}% (${elapsed}s/${timeout}s)"
 
-        # Após 60s, tenta configurar pacotes pendentes e acelerar
-        if [ $elapsed -eq 60 ]; then
-            log_warning "\n⚠️ APT ainda ocupado após 60s. Tentando 'dpkg --configure -a'..."
+        # Após 30s, tenta configurar pacotes pendentes e acelerar
+        if [ $elapsed -eq 30 ]; then
+            log_warning "\n⚠️ APT ainda ocupado após 30s. Tentando 'dpkg --configure -a'..."
             dpkg --configure -a >> instalacao_corrigida.log 2>&1 || true
         fi
 
@@ -855,7 +855,8 @@ wait_apt_locks() {
 
 # Atualizar sistema
 log_info "📦 Atualizando sistema..."
-wait_apt_locks
+# Espera curta para maior agilidade (180s)
+wait_apt_locks 180
 {
     apt update -y &&
     apt upgrade -y &&
@@ -912,7 +913,8 @@ CODENAME=$(lsb_release -cs 2>/dev/null || (. /etc/os-release 2>/dev/null; echo "
 echo "deb [arch=$ARCH signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $CODENAME stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
 log_info "📦 Atualizando índices APT do Docker..."
-wait_apt_locks
+# Espera ainda mais curta para Docker (120s)
+wait_apt_locks 120
 if ! apt-get update -y >> instalacao_corrigida.log 2>&1; then
     log_error "Falha ao atualizar índices APT do Docker. Consulte instalacao_corrigida.log (últimas linhas abaixo)."
     tail -n 120 instalacao_corrigida.log || true
