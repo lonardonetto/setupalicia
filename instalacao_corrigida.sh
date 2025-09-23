@@ -805,26 +805,51 @@ if command -v ufw >/dev/null 2>&1; then
     log_success "✅ Firewall configurado!"
 fi
 
-# Função utilitária: aguardar liberação dos locks do APT/DPKG (até 10 min)
+# Função utilitária: aguardar liberação dos locks do APT/DPKG com barra de progresso (padrão 600s)
 wait_apt_locks() {
-    log_info "⏳ Aguardando liberação dos locks do APT/DPKG..."
+    local timeout=${1:-600}
+    log_info "⏳ Aguardando liberação dos locks do APT/DPKG (máx ${timeout}s)..."
+
+    # Pausar timers/serviços para agilizar a liberação
+    systemctl stop apt-daily.service apt-daily.timer apt-daily-upgrade.service apt-daily-upgrade.timer >/dev/null 2>&1 || true
+
     local start_ts=$(date +%s)
-    local timeout=600  # 10 minutos
+    local width=50
+
     while true; do
         if ! fuser /var/lib/dpkg/lock >/dev/null 2>&1 \
            && ! fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 \
            && ! fuser /var/lib/apt/lists/lock >/dev/null 2>&1 \
            && ! fuser /var/cache/apt/archives/lock >/dev/null 2>&1 \
            && ! pgrep -f "apt.systemd.daily|unattended|apt(-get)?|dpkg" >/dev/null 2>&1; then
+            echo -ne "\r                                                          \r"
             break
         fi
-        sleep 5
+
         local now=$(date +%s)
-        if [ $((now - start_ts)) -gt $timeout ]; then
-            log_warning "⚠️ APT ainda ocupado após $((timeout/60)) min. Tentando 'dpkg --configure -a' e seguindo..."
+        local elapsed=$((now - start_ts))
+        [ $elapsed -lt 0 ] && elapsed=0
+        local percent=$(( elapsed * 100 / timeout ))
+        [ $percent -gt 100 ] && percent=100
+        local filled=$(( percent * width / 100 ))
+        local empty=$(( width - filled ))
+        local bar="$(printf '%0.s#' $(seq 1 $filled))$(printf '%0.s-' $(seq 1 $empty))"
+        echo -ne "\r⏳ APT ocupado: [${bar}] ${percent}% (${elapsed}s/${timeout}s)"
+
+        # Após 60s, tenta configurar pacotes pendentes e acelerar
+        if [ $elapsed -eq 60 ]; then
+            log_warning "\n⚠️ APT ainda ocupado após 60s. Tentando 'dpkg --configure -a'..."
             dpkg --configure -a >> instalacao_corrigida.log 2>&1 || true
+        fi
+
+        if [ $elapsed -ge $timeout ]; then
+            log_warning "\n⚠️ APT ocupado por muito tempo (${timeout}s). Forçando continuação."
+            dpkg --configure -a >> instalacao_corrigida.log 2>&1 || true
+            echo -ne "\r                                                          \r"
             break
         fi
+
+        sleep 1
     done
 }
 
