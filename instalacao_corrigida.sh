@@ -359,7 +359,7 @@ networks:
     EVOLUTION_YAML="version: '3.8'
 services:
   evolution-api:
-    image: atendai/evolution-api:latest
+    image: evoapicloud/evolution-api:latest
     environment:
       NODE_ENV: production
       SERVER_TYPE: http
@@ -1728,7 +1728,7 @@ version: '3.7'
 
 services:
   evolution-api:
-    image: atendai/evolution-api:latest
+    image: evoapicloud/evolution-api:latest
     networks:
       - network_public
     environment:
