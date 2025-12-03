@@ -1518,7 +1518,7 @@ version: '3.7'
 
 services:
   traefik:
-    image: traefik:v2.10
+    image: traefik:v2.11
     environment:
       - DOCKER_API_VERSION=1.46
     command:
