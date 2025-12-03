@@ -62,7 +62,7 @@ version: '3.7'
 services:
   portainer:
     image: portainer/portainer-ce:latest
-    command: -H tcp://tasks.agent:9001 --tlsskipverify --admin-password '$PORTAINER_ADMIN_HASH'
+    command: -H tcp://tasks.agent:9001 --tlsskipverify --admin-password $PORTAINER_ADMIN_HASH
     volumes:
       - portainer_data:/data
     networks:
