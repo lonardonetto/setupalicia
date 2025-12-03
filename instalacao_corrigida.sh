@@ -63,6 +63,8 @@ services:
   portainer:
     image: portainer/portainer-ce:latest
     command: -H tcp://tasks.agent:9001 --tlsskipverify --admin-password $PORTAINER_ADMIN_HASH_ESCAPED
+    ports:
+      - "9000:9000"
     volumes:
       - portainer_data:/data
     networks:
@@ -1590,6 +1592,8 @@ services:
   portainer:
     image: portainer/portainer-ce:latest
     command: -H tcp://tasks.agent:9001 --tlsskipverify
+    ports:
+      - "9000:9000"
     volumes:
       - portainer_data:/data
     networks:
