@@ -1520,7 +1520,7 @@ services:
   traefik:
     image: traefik:v2.10
     environment:
-      - DOCKER_API_VERSION=1.44
+      - DOCKER_API_VERSION=1.46
     command:
       - --api.dashboard=true
       - --api.insecure=false
@@ -1557,6 +1557,7 @@ services:
         window: 120s
       labels:
         - traefik.enable=true
+        - traefik.http.services.api.loadbalancer.server.port=8080
         - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
         - traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true
         - traefik.http.routers.redirect-to-https.rule=hostregexp(\`{host:.+}\`)
