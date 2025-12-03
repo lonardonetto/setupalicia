@@ -1424,6 +1424,16 @@ create_portainer_admin_auto() {
                 fi
             fi
         fi
+        # Fallback adicional: resolver via service DNS do Swarm (tasks.*)
+        if [ -z "$JWT_TOKEN" ]; then
+            for url_try in "http://tasks.portainer_portainer:9000" "http://portainer_portainer:9000"; do
+                JWT_TOKEN=$(portainer_login "$url_try" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
+                if [ ! -z "$JWT_TOKEN" ]; then
+                    portainer_url="$url_try"
+                    break
+                fi
+            done
+        fi
         if [ ! -z "$JWT_TOKEN" ]; then
             PORTAINER_API_URL="$portainer_url"
             USE_PORTAINER_API=true
@@ -1507,6 +1517,16 @@ create_portainer_admin_auto() {
                 JWT_TOKEN=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
             fi
         fi
+    fi
+    # Fallback adicional: resolver via service DNS do Swarm (tasks.*)
+    if [ -z "$JWT_TOKEN" ]; then
+        for url_try in "http://tasks.portainer_portainer:9000" "http://portainer_portainer:9000"; do
+            JWT_TOKEN=$(portainer_login "$url_try" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
+            if [ ! -z "$JWT_TOKEN" ]; then
+                portainer_url="$url_try"
+                break
+            fi
+        done
     fi
 
     if [ ! -z "$JWT_TOKEN" ]; then
