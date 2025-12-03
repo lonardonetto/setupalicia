@@ -1455,6 +1455,38 @@ create_portainer_admin_auto() {
     log_error "? Falha ao autenticar no Portainer. Ajuste PORTAINER_ADMIN_USER/PORTAINER_ADMIN_PASSWORD ou resete o Portainer."
     echo "PORTAINER_ADMIN_USER=$PORTAINER_ADMIN_USER" >> .env
     echo "PORTAINER_ADMIN_PASSWORD=$PORTAINER_ADMIN_PASSWORD" >> .env
+    
+    log_warning "?? Tentando reset automo do Portainer (stack + volume) e novo deploy..."
+    reset_portainer_force() {
+        docker stack rm portainer >/dev/null 2>&1 || true
+        sleep 10
+        docker volume rm portainer_data >/dev/null 2>&1 || true
+        docker network rm agent_network >/dev/null 2>&1 || true
+        docker volume create portainer_data >/dev/null 2>&1
+        docker network create --driver=overlay agent_network >/dev/null 2>&1 || true
+        docker stack deploy --prune --resolve-image always -c portainer_corrigido.yaml portainer
+        wait_service_perfect "portainer" 240
+        sleep 5
+    }
+
+    reset_portainer_force
+
+    # Tentar login novamente aps reset
+    portainer_url="https://$DOMINIO_PORTAINER"
+    JWT_TOKEN=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
+    if [ -z "$JWT_TOKEN" ]; then
+        portainer_url="http://$DOMINIO_PORTAINER"
+        JWT_TOKEN=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
+    fi
+
+    if [ ! -z "$JWT_TOKEN" ]; then
+        PORTAINER_API_URL="$portainer_url"
+        USE_PORTAINER_API=true
+        log_success "? Portainer resetado e login realizado aps fallback. Deploy via API ativado."
+        return 0
+    fi
+
+    log_error "? Mesmo aps reset automtico o login falhou. Verifique DNS e certifique-se de que o domnio aponta para este servidor."
     return 1
 }
 
