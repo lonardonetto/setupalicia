@@ -1368,19 +1368,35 @@ create_portainer_admin_auto() {
     portainer_candidate_urls+=("http://$DOMINIO_PORTAINER")
 
     wait_portainer_ready() {
+        local max_wait=${1:-90}
+        local start_ts=$(date +%s)
+        local attempt=1
         local url
-        for url in "${portainer_candidate_urls[@]}"; do
-            for i in $(seq 1 40); do
+
+        while true; do
+            for url in "${portainer_candidate_urls[@]}"; do
                 local code
-                code=$(curl -sk -o /dev/null -w "%{http_code}" "$url/api/status" --max-time 5 2>/dev/null || true)
+                code=$(curl -sk -o /dev/null -w "%{http_code}" "$url/api/status" --max-time 3 2>/dev/null || true)
                 if echo "$code" | grep -qE "200|302|401|404"; then
                     PORTAINER_API_URL="$url"
+                    log_success "? Portainer API respondeu ($code) em $url"
                     return 0
                 fi
-                sleep 2
             done
+
+            local now=$(date +%s)
+            local elapsed=$((now - start_ts))
+            if [ $elapsed -ge $max_wait ]; then
+                log_warning "?? Portainer n?o respondeu via API ap?s ${max_wait}s; seguindo mesmo assim."
+                return 1
+            fi
+
+            if [ $((attempt % 5)) -eq 0 ]; then
+                log_info "?? Aguardando Portainer API... ${elapsed}/${max_wait}s"
+            fi
+            attempt=$((attempt+1))
+            sleep 2
         done
-        return 1
     }
 
     try_portainer_login() {
