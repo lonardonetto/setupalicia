@@ -1440,8 +1440,6 @@ create_portainer_admin_auto() {
     log_error "? Mesmo ap?s reset autom?tico o login falhou. Verifique DNS e certifique-se de que o dom?nio aponta para este servidor."
     return 1
 }
-    return 1
-}
 
 # 1. INSTALAR TRAEFIK (PROXY SSL)
 echo ""
