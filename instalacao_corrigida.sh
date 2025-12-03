@@ -1403,8 +1403,25 @@ create_portainer_admin_auto() {
     check_code=$(curl -s -o /dev/null -w "%{http_code}" "$portainer_url/api/users/admin/check" --insecure --max-time 5 2>/dev/null || true)
     if [ "$check_code" = "204" ] || [ "$check_code" = "200" ] || [ "$check_code" = "true" ]; then
         log_warning "⚠️ Portainer já configurado anteriormente (check: $check_code)"
-        # Tentar fazer login novamente
-        JWT_TOKEN=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
+        # Tentar fazer login novamente (HTTPS, HTTP e IP interno)
+        JWT_TOKEN=""
+        for url_try in "https://$DOMINIO_PORTAINER" "http://$DOMINIO_PORTAINER"; do
+            JWT_TOKEN=$(portainer_login "$url_try" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
+            if [ ! -z "$JWT_TOKEN" ]; then
+                portainer_url="$url_try"
+                break
+            fi
+        done
+        if [ -z "$JWT_TOKEN" ]; then
+            local portainer_container=$(docker ps --filter "name=portainer_portainer" --format "{{.Names}}" | head -1)
+            if [ ! -z "$portainer_container" ]; then
+                local container_ip=$(docker inspect $portainer_container --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' | head -1)
+                if [ ! -z "$container_ip" ]; then
+                    portainer_url="http://$container_ip:9000"
+                    JWT_TOKEN=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
+                fi
+            fi
+        fi
         if [ ! -z "$JWT_TOKEN" ]; then
             PORTAINER_API_URL="$portainer_url"
             USE_PORTAINER_API=true
@@ -1477,6 +1494,17 @@ create_portainer_admin_auto() {
     if [ -z "$JWT_TOKEN" ]; then
         portainer_url="http://$DOMINIO_PORTAINER"
         JWT_TOKEN=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
+    fi
+    # Fallback via IP interno do container (evita problemas de DNS/SSL)
+    if [ -z "$JWT_TOKEN" ]; then
+        local portainer_container=$(docker ps --filter "name=portainer_portainer" --format "{{.Names}}" | head -1)
+        if [ ! -z "$portainer_container" ]; then
+            local container_ip=$(docker inspect $portainer_container --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' | head -1)
+            if [ ! -z "$container_ip" ]; then
+                portainer_url="http://$container_ip:9000"
+                JWT_TOKEN=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
+            fi
+        fi
     fi
 
     if [ ! -z "$JWT_TOKEN" ]; then
