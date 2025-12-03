@@ -1338,154 +1338,86 @@ deploy_via_portainer_api() {
 
 # NOVA FUNÇÃO: Criar conta admin do Portainer automaticamente
 create_portainer_admin_auto() {
-    log_info "🔑 Configurando conta admin do Portainer automaticamente..."
-    
-    # As credenciais já foram geradas no início do script
+    log_info "?? Configurando conta admin do Portainer automaticamente..."
+
     if [ -z "$PORTAINER_ADMIN_USER" ] || [ -z "$PORTAINER_ADMIN_PASSWORD" ]; then
-        log_error "Credenciais do Portainer não encontradas!"
+        log_error "Credenciais do Portainer n?o encontradas!"
         return 1
     fi
-    
-    # Aguardar Portainer estar acessível
-    local max_attempts=30
-    local attempt=0
-    local portainer_url=""
-    
-    while [ $attempt -lt $max_attempts ]; do
-        # Tentar HTTPS primeiro
-        if curl -s "https://$DOMINIO_PORTAINER/api/status" --insecure --max-time 5 >/dev/null 2>&1; then
-            portainer_url="https://$DOMINIO_PORTAINER"
-            log_success "✅ Portainer acessível via HTTPS!"
-            break
+
+    local portainer_candidate_urls=()
+    portainer_candidate_urls+=("http://tasks.portainer_portainer:9000")
+    portainer_candidate_urls+=("http://portainer_portainer:9000")
+    local portainer_container=$(docker ps --filter "name=portainer_portainer" --format "{{.Names}}" | head -1)
+    if [ ! -z "$portainer_container" ]; then
+        local container_ip=$(docker inspect $portainer_container --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' | awk '{print $1}')
+        if [ ! -z "$container_ip" ]; then
+            portainer_candidate_urls+=("http://$container_ip:9000")
         fi
-        
-        # Tentar HTTP caso SSL ainda não esteja pronto
-        if curl -s "http://$DOMINIO_PORTAINER/api/status" --max-time 5 >/dev/null 2>&1; then
-            portainer_url="http://$DOMINIO_PORTAINER"
-            log_warning "⚠️ Portainer acessível via HTTP (SSL pendente)"
-            break
-        fi
-        
-        # Tentar via IP direto na porta do container
-        local portainer_container=$(docker ps --filter "name=portainer_portainer" --format "{{.Names}}" | head -1)
-        if [ ! -z "$portainer_container" ]; then
-            local container_ip=$(docker inspect $portainer_container --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' | head -1)
-            if [ ! -z "$container_ip" ] && curl -s "http://$container_ip:9000/api/status" --max-time 5 >/dev/null 2>&1; then
-                portainer_url="http://$container_ip:9000"
-                log_info "📡 Usando IP interno do container: $container_ip"
-                break
+    fi
+    portainer_candidate_urls+=("https://$DOMINIO_PORTAINER")
+    portainer_candidate_urls+=("http://$DOMINIO_PORTAINER")
+
+    try_portainer_login() {
+        local url
+        for url in "${portainer_candidate_urls[@]}"; do
+            JWT_TOKEN=$(portainer_login "$url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
+            if [ ! -z "$JWT_TOKEN" ]; then
+                PORTAINER_API_URL="$url"
+                USE_PORTAINER_API=true
+                log_success "? Login no Portainer realizado! Deploy via API ativado. (URL: $url)"
+                return 0
             fi
+        done
+        return 1
+    }
+
+    for i in $(seq 1 30); do
+        if docker service ls --format '{{.Name}}' | grep -q portainer_portainer; then
+            break
         fi
-        
-        attempt=$((attempt + 1))
-        echo -n "."
         sleep 2
     done
-    
-    if [ -z "$portainer_url" ]; then
-        log_error "❌ Não foi possível conectar ao Portainer!"
-        log_info "🔐 Você precisará configurar manualmente em: https://$DOMINIO_PORTAINER"
-        return 1
-    fi
-    
-    # Aguardar mais um pouco para garantir que o Portainer está pronto
     sleep 5
-    
-    # Tentar login direto (caso o admin já exista ou tenha sido configurado via --admin-password)
-    JWT_TOKEN=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
-    if [ ! -z "$JWT_TOKEN" ]; then
-        PORTAINER_API_URL="$portainer_url"
-        USE_PORTAINER_API=true
-        log_success "✅ Login no Portainer realizado! Deploy via API ativado."
+
+    if try_portainer_login; then
         return 0
     fi
 
-    # Verificar se já foi configurado
     local check_code
-    check_code=$(curl -s -o /dev/null -w "%{http_code}" "$portainer_url/api/users/admin/check" --insecure --max-time 5 2>/dev/null || true)
-    if [ "$check_code" = "204" ] || [ "$check_code" = "200" ] || [ "$check_code" = "true" ]; then
-        log_warning "⚠️ Portainer já configurado anteriormente (check: $check_code)"
-        # Tentar fazer login novamente (HTTPS, HTTP e IP interno)
-        JWT_TOKEN=""
-        for url_try in "https://$DOMINIO_PORTAINER" "http://$DOMINIO_PORTAINER"; do
-            JWT_TOKEN=$(portainer_login "$url_try" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
-            if [ ! -z "$JWT_TOKEN" ]; then
-                portainer_url="$url_try"
-                break
-            fi
-        done
-        if [ -z "$JWT_TOKEN" ]; then
-            local portainer_container=$(docker ps --filter "name=portainer_portainer" --format "{{.Names}}" | head -1)
-            if [ ! -z "$portainer_container" ]; then
-                local container_ip=$(docker inspect $portainer_container --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' | head -1)
-                if [ ! -z "$container_ip" ]; then
-                    portainer_url="http://$container_ip:9000"
-                    JWT_TOKEN=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
-                fi
-            fi
-        fi
-        # Fallback adicional: resolver via service DNS do Swarm (tasks.*)
-        if [ -z "$JWT_TOKEN" ]; then
-            for url_try in "http://tasks.portainer_portainer:9000" "http://portainer_portainer:9000"; do
-                JWT_TOKEN=$(portainer_login "$url_try" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
-                if [ ! -z "$JWT_TOKEN" ]; then
-                    portainer_url="$url_try"
-                    break
-                fi
-            done
-        fi
-        if [ ! -z "$JWT_TOKEN" ]; then
-            PORTAINER_API_URL="$portainer_url"
-            USE_PORTAINER_API=true
-            log_success "✅ Login no Portainer realizado! Deploy via API ativado."
+    check_code=$(curl -s -o /dev/null -w "%{http_code}" "http://tasks.portainer_portainer:9000/api/users/admin/check" --max-time 5 2>/dev/null || true)
+    if [ "$check_code" = "204" ] || [ "$check_code" = "200" ]; then
+        log_warning "?? Portainer j? configurado anteriormente (check: $check_code)"
+        if try_portainer_login; then
             return 0
         else
-            log_error "❌ Login no Portainer falhou com as credenciais atuais. Ajuste PORTAINER_ADMIN_USER/PORTAINER_ADMIN_PASSWORD ou resete o Portainer."
+            log_error "? Login no Portainer falhou com as credenciais atuais. Ajuste PORTAINER_ADMIN_USER/PORTAINER_ADMIN_PASSWORD ou resete o Portainer."
             return 1
         fi
     fi
-    
-    # Criar usuário admin
-    log_info "📝 Criando usuário admin: $PORTAINER_ADMIN_USER"
-    
-    local create_response=$(curl -s -X POST \
-        "$portainer_url/api/users/admin/init" \
-        -H "Content-Type: application/json" \
-        -d "{
-            \"Username\": \"$PORTAINER_ADMIN_USER\",
-            \"Password\": \"$PORTAINER_ADMIN_PASSWORD\"
-        }" \
-        --insecure --max-time 10 2>/dev/null)
-    
-    # Verificar sucesso
+
+    log_info "?? Criando usu?rio admin (via tasks.portainer_portainer)..."
+    local create_response
+    create_response=$(curl -s -X POST         "http://tasks.portainer_portainer:9000/api/users/admin/init"         -H "Content-Type: application/json"         -d "{            "Username": "$PORTAINER_ADMIN_USER",            "Password": "$PORTAINER_ADMIN_PASSWORD"        }"         --max-time 10 2>/dev/null)
+
     if echo "$create_response" | grep -q "jwt\|Username"; then
         log_success "? Conta admin criada com sucesso!"
-        log_info "?? Usu?rio: $PORTAINER_ADMIN_USER"
-        log_info "?? Senha: $PORTAINER_ADMIN_PASSWORD"
-        
-        # Aguardar um pouco antes do login
-        sleep 5
     else
         log_warning "?? N?o foi poss?vel criar conta automaticamente"
         log_info "?? Resposta: $create_response"
     fi
-    
-    # Tentar login de qualquer forma (admin pode j? existir com estas credenciais ou via --admin-password)
+
     log_info "?? Tentando login no Portainer..."
-    JWT_TOKEN=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
-    if [ ! -z "$JWT_TOKEN" ]; then
-        PORTAINER_API_URL="$portainer_url"
-        USE_PORTAINER_API=true
-        log_success "? Login realizado! Deploy via API ativado."
+    if try_portainer_login; then
         log_info "?? Token v?lido obtido (${#JWT_TOKEN} caracteres)"
         return 0
     fi
-    
+
     log_error "? Falha ao autenticar no Portainer. Ajuste PORTAINER_ADMIN_USER/PORTAINER_ADMIN_PASSWORD ou resete o Portainer."
     echo "PORTAINER_ADMIN_USER=$PORTAINER_ADMIN_USER" >> .env
     echo "PORTAINER_ADMIN_PASSWORD=$PORTAINER_ADMIN_PASSWORD" >> .env
-    
-    log_warning "?? Tentando reset automo do Portainer (stack + volume) e novo deploy..."
+
+    log_warning "?? Tentando reset autom?tico do Portainer (stack + volume) e novo deploy..."
     reset_portainer_force() {
         docker stack rm portainer >/dev/null 2>&1 || true
         sleep 10
@@ -1500,43 +1432,14 @@ create_portainer_admin_auto() {
 
     reset_portainer_force
 
-    # Tentar login novamente aps reset
-    portainer_url="https://$DOMINIO_PORTAINER"
-    JWT_TOKEN=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
-    if [ -z "$JWT_TOKEN" ]; then
-        portainer_url="http://$DOMINIO_PORTAINER"
-        JWT_TOKEN=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
-    fi
-    # Fallback via IP interno do container (evita problemas de DNS/SSL)
-    if [ -z "$JWT_TOKEN" ]; then
-        local portainer_container=$(docker ps --filter "name=portainer_portainer" --format "{{.Names}}" | head -1)
-        if [ ! -z "$portainer_container" ]; then
-            local container_ip=$(docker inspect $portainer_container --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' | head -1)
-            if [ ! -z "$container_ip" ]; then
-                portainer_url="http://$container_ip:9000"
-                JWT_TOKEN=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
-            fi
-        fi
-    fi
-    # Fallback adicional: resolver via service DNS do Swarm (tasks.*)
-    if [ -z "$JWT_TOKEN" ]; then
-        for url_try in "http://tasks.portainer_portainer:9000" "http://portainer_portainer:9000"; do
-            JWT_TOKEN=$(portainer_login "$url_try" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
-            if [ ! -z "$JWT_TOKEN" ]; then
-                portainer_url="$url_try"
-                break
-            fi
-        done
-    fi
-
-    if [ ! -z "$JWT_TOKEN" ]; then
-        PORTAINER_API_URL="$portainer_url"
-        USE_PORTAINER_API=true
-        log_success "? Portainer resetado e login realizado aps fallback. Deploy via API ativado."
+    if try_portainer_login; then
+        log_success "? Portainer resetado e login realizado ap?s fallback. Deploy via API ativado."
         return 0
     fi
 
-    log_error "? Mesmo aps reset automtico o login falhou. Verifique DNS e certifique-se de que o domnio aponta para este servidor."
+    log_error "? Mesmo ap?s reset autom?tico o login falhou. Verifique DNS e certifique-se de que o dom?nio aponta para este servidor."
+    return 1
+}
     return 1
 }
 
