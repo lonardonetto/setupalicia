@@ -474,11 +474,12 @@ portainer_login() {
     # Aguardar um pouco para garantir que o Portainer está pronto
     sleep 2
     
-    local response=$(curl -sk -X POST \
+    local response
+    response=$(curl -sk -X POST \
         "$portainer_url/api/auth" \
         -H "Content-Type: application/json" \
         -d "{\"Username\":\"$username\",\"Password\":\"$password\"}" \
-        --max-time 10 2>/dev/null)
+        --max-time 10 2>/dev/null || true)
     
     local jwt_token=$(echo "$response" | sed -n 's/.*"jwt":"\([^"]*\).*/\1/p')
     
@@ -1398,7 +1399,11 @@ create_portainer_admin_auto() {
 
     log_info "?? Criando usu?rio admin (via tasks.portainer_portainer)..."
     local create_response
-    create_response=$(curl -s -X POST         "http://tasks.portainer_portainer:9000/api/users/admin/init"         -H "Content-Type: application/json"         -d "{            "Username": "$PORTAINER_ADMIN_USER",            "Password": "$PORTAINER_ADMIN_PASSWORD"        }"         --max-time 10 2>/dev/null)
+    create_response=$(curl -s -X POST \
+        "http://tasks.portainer_portainer:9000/api/users/admin/init" \
+        -H "Content-Type: application/json" \
+        -d "{\"Username\":\"$PORTAINER_ADMIN_USER\",\"Password\":\"$PORTAINER_ADMIN_PASSWORD\"}" \
+        --max-time 10 2>/dev/null || true)
 
     if echo "$create_response" | grep -q "jwt\|Username"; then
         log_success "? Conta admin criada com sucesso!"
