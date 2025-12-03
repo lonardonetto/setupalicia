@@ -1346,9 +1346,17 @@ create_portainer_admin_auto() {
         return 1
     fi
 
+    local server_ip=""
+    server_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+
     local portainer_candidate_urls=()
     portainer_candidate_urls+=("http://tasks.portainer_portainer:9000")
     portainer_candidate_urls+=("http://portainer_portainer:9000")
+    portainer_candidate_urls+=("http://127.0.0.1:9000")
+    portainer_candidate_urls+=("http://localhost:9000")
+    if [ ! -z "$server_ip" ]; then
+        portainer_candidate_urls+=("http://$server_ip:9000")
+    fi
     local portainer_container=$(docker ps --filter "name=portainer_portainer" --format "{{.Names}}" | head -1)
     if [ ! -z "$portainer_container" ]; then
         local container_ip=$(docker inspect $portainer_container --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' | awk '{print $1}')
@@ -1358,6 +1366,22 @@ create_portainer_admin_auto() {
     fi
     portainer_candidate_urls+=("https://$DOMINIO_PORTAINER")
     portainer_candidate_urls+=("http://$DOMINIO_PORTAINER")
+
+    wait_portainer_ready() {
+        local url
+        for url in "${portainer_candidate_urls[@]}"; do
+            for i in $(seq 1 40); do
+                local code
+                code=$(curl -sk -o /dev/null -w "%{http_code}" "$url/api/status" --max-time 5 2>/dev/null || true)
+                if echo "$code" | grep -qE "200|302|401|404"; then
+                    PORTAINER_API_URL="$url"
+                    return 0
+                fi
+                sleep 2
+            done
+        done
+        return 1
+    }
 
     try_portainer_login() {
         local url
@@ -1381,6 +1405,8 @@ create_portainer_admin_auto() {
     done
     sleep 5
 
+    wait_portainer_ready || log_warning "?? Portainer ainda inicializando (status API). Tentando assim mesmo..."
+
     if try_portainer_login; then
         return 0
     fi
@@ -1399,16 +1425,20 @@ create_portainer_admin_auto() {
 
     log_info "?? Criando usu?rio admin (via tasks.portainer_portainer)..."
     local create_response
-    create_response=$(curl -s -X POST \
+    local create_code
+    local create_body_file="/tmp/portainer_init_body.$$"
+    create_code=$(curl -sk -o "$create_body_file" -w "%{http_code}" -X POST \
         "http://tasks.portainer_portainer:9000/api/users/admin/init" \
         -H "Content-Type: application/json" \
         -d "{\"Username\":\"$PORTAINER_ADMIN_USER\",\"Password\":\"$PORTAINER_ADMIN_PASSWORD\"}" \
-        --max-time 10 2>/dev/null || true)
+        --max-time 20 2>/dev/null || true)
+    create_response=$(cat "$create_body_file" 2>/dev/null || true)
+    rm -f "$create_body_file"
 
-    if echo "$create_response" | grep -q "jwt\|Username"; then
-        log_success "? Conta admin criada com sucesso!"
+    if echo "$create_response" | grep -q "jwt\|Username" || echo "$create_code" | grep -qE "200|201|204|409"; then
+        log_success "? Conta admin criada (ou j? existia)."
     else
-        log_warning "?? N?o foi poss?vel criar conta automaticamente"
+        log_warning "?? N?o foi poss?vel criar conta automaticamente (HTTP $create_code)"
         log_info "?? Resposta: $create_response"
     fi
 
