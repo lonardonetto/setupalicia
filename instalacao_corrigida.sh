@@ -62,7 +62,7 @@ version: '3.7'
 services:
   portainer:
     image: portainer/portainer-ce:latest
-    command: -H tcp://tasks.agent:9001 --tlsskipverify
+    command: -H tcp://tasks.agent:9001 --tlsskipverify --admin-password '$PORTAINER_ADMIN_HASH'
     volumes:
       - portainer_data:/data
     networks:
@@ -790,6 +790,10 @@ fi
 [ -z "$EVOLUTION_API_KEY" ] && EVOLUTION_API_KEY=$(openssl rand -hex 32)
 [ -z "$PORTAINER_ADMIN_USER" ] && PORTAINER_ADMIN_USER="admin"
 [ -z "$PORTAINER_ADMIN_PASSWORD" ] && PORTAINER_ADMIN_PASSWORD=$(openssl rand -base64 20 | tr -d "=+/" | cut -c1-16)
+# Gerar hash bcrypt para o Portainer (usado no comando --admin-password)
+if [ -z "$PORTAINER_ADMIN_HASH" ]; then
+    PORTAINER_ADMIN_HASH=$(docker run --rm httpd:2.4-alpine htpasswd -nbB "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD" | cut -d: -f2)
+fi
 
 # Salvar variáveis de ambiente
 cat > .env <<EOF
@@ -803,6 +807,7 @@ POSTGRES_PASSWORD=$POSTGRES_PASSWORD
 EVOLUTION_API_KEY=$EVOLUTION_API_KEY
 PORTAINER_ADMIN_USER=$PORTAINER_ADMIN_USER
 PORTAINER_ADMIN_PASSWORD=$PORTAINER_ADMIN_PASSWORD
+PORTAINER_ADMIN_HASH=$PORTAINER_ADMIN_HASH
 EOF
 
 log_success "✅ Variáveis salvas em .env"
@@ -1384,22 +1389,31 @@ create_portainer_admin_auto() {
     # Aguardar mais um pouco para garantir que o Portainer está pronto
     sleep 5
     
+    # Tentar login direto (caso o admin já exista ou tenha sido configurado via --admin-password)
+    JWT_TOKEN=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
+    if [ ! -z "$JWT_TOKEN" ]; then
+        PORTAINER_API_URL="$portainer_url"
+        USE_PORTAINER_API=true
+        log_success "✅ Login no Portainer realizado! Deploy via API ativado."
+        return 0
+    fi
+
     # Verificar se já foi configurado
     local check_code
     check_code=$(curl -s -o /dev/null -w "%{http_code}" "$portainer_url/api/users/admin/check" --insecure --max-time 5 2>/dev/null || true)
     if [ "$check_code" = "204" ] || [ "$check_code" = "200" ] || [ "$check_code" = "true" ]; then
         log_warning "⚠️ Portainer já configurado anteriormente (check: $check_code)"
-        # Tentar fazer login para verificar se temos as credenciais corretas
+        # Tentar fazer login novamente
         JWT_TOKEN=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
         if [ ! -z "$JWT_TOKEN" ]; then
             PORTAINER_API_URL="$portainer_url"
             USE_PORTAINER_API=true
             log_success "✅ Login no Portainer realizado! Deploy via API ativado."
+            return 0
         else
             log_error "❌ Login no Portainer falhou com as credenciais atuais. Ajuste PORTAINER_ADMIN_USER/PORTAINER_ADMIN_PASSWORD ou resete o Portainer."
             return 1
         fi
-        return 0
     fi
     
     # Criar usuário admin
@@ -1416,35 +1430,32 @@ create_portainer_admin_auto() {
     
     # Verificar sucesso
     if echo "$create_response" | grep -q "jwt\|Username"; then
-        log_success "✅ Conta admin criada com sucesso!"
-        log_info "👤 Usuário: $PORTAINER_ADMIN_USER"
-        log_info "🔐 Senha: $PORTAINER_ADMIN_PASSWORD"
+        log_success "? Conta admin criada com sucesso!"
+        log_info "?? Usu?rio: $PORTAINER_ADMIN_USER"
+        log_info "?? Senha: $PORTAINER_ADMIN_PASSWORD"
         
         # Aguardar um pouco antes do login
         sleep 5
-        
-        # Fazer login imediatamente para obter JWT
-        log_info "🔐 Fazendo login para obter token..."
-        JWT_TOKEN=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
-        if [ ! -z "$JWT_TOKEN" ]; then
-            PORTAINER_API_URL="$portainer_url"
-            USE_PORTAINER_API=true
-            log_success "✅ Login automático realizado! Deploy via API ativado."
-            log_info "🔑 Token válido obtido (${#JWT_TOKEN} caracteres)"
-        else
-            log_warning "⚠️ Falha ao obter token, deploy será via CLI"
-            USE_PORTAINER_API=false
-        fi
-        
-        return 0
     else
-        log_warning "⚠️ Não foi possível criar conta automaticamente"
-        log_info "📋 Resposta: $create_response"
-        echo "PORTAINER_ADMIN_USER=$PORTAINER_ADMIN_USER" >> .env
-        echo "PORTAINER_ADMIN_PASSWORD=$PORTAINER_ADMIN_PASSWORD" >> .env
-        
-        return 1
+        log_warning "?? N?o foi poss?vel criar conta automaticamente"
+        log_info "?? Resposta: $create_response"
     fi
+    
+    # Tentar login de qualquer forma (admin pode j? existir com estas credenciais ou via --admin-password)
+    log_info "?? Tentando login no Portainer..."
+    JWT_TOKEN=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
+    if [ ! -z "$JWT_TOKEN" ]; then
+        PORTAINER_API_URL="$portainer_url"
+        USE_PORTAINER_API=true
+        log_success "? Login realizado! Deploy via API ativado."
+        log_info "?? Token v?lido obtido (${#JWT_TOKEN} caracteres)"
+        return 0
+    fi
+    
+    log_error "? Falha ao autenticar no Portainer. Ajuste PORTAINER_ADMIN_USER/PORTAINER_ADMIN_PASSWORD ou resete o Portainer."
+    echo "PORTAINER_ADMIN_USER=$PORTAINER_ADMIN_USER" >> .env
+    echo "PORTAINER_ADMIN_PASSWORD=$PORTAINER_ADMIN_PASSWORD" >> .env
+    return 1
 }
 
 # 1. INSTALAR TRAEFIK (PROXY SSL)
