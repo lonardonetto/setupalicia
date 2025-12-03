@@ -62,7 +62,7 @@ version: '3.7'
 services:
   portainer:
     image: portainer/portainer-ce:latest
-    command: -H tcp://tasks.agent:9001 --tlsskipverify --admin-password $PORTAINER_ADMIN_HASH
+    command: -H tcp://tasks.agent:9001 --tlsskipverify --admin-password $PORTAINER_ADMIN_HASH_ESCAPED
     volumes:
       - portainer_data:/data
     networks:
@@ -794,6 +794,8 @@ fi
 if [ -z "$PORTAINER_ADMIN_HASH" ]; then
     PORTAINER_ADMIN_HASH=$(docker run --rm httpd:2.4-alpine htpasswd -nbB "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD" | cut -d: -f2)
 fi
+# Escapar $ para YAML do Portainer
+PORTAINER_ADMIN_HASH_ESCAPED=$(echo "$PORTAINER_ADMIN_HASH" | sed "s/\\$/$$/g")
 
 # Salvar variáveis de ambiente
 cat > .env <<EOF
