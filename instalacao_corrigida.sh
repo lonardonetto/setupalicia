@@ -1505,6 +1505,8 @@ version: '3.7'
 services:
   traefik:
     image: traefik:v2.10
+    environment:
+      - DOCKER_API_VERSION=1.44
     command:
       - --api.dashboard=true
       - --api.insecure=false
