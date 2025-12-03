@@ -1439,23 +1439,35 @@ create_portainer_admin_auto() {
         fi
     fi
 
-    log_info "?? Criando usu?rio admin (via tasks.portainer_portainer)..."
+    log_info "?? Criando usu?rio admin (via API do Portainer)..."
     local create_response
     local create_code
-    local create_body_file="/tmp/portainer_init_body.$$"
-    create_code=$(curl -sk -o "$create_body_file" -w "%{http_code}" -X POST \
-        "http://tasks.portainer_portainer:9000/api/users/admin/init" \
-        -H "Content-Type: application/json" \
-        -d "{\"Username\":\"$PORTAINER_ADMIN_USER\",\"Password\":\"$PORTAINER_ADMIN_PASSWORD\"}" \
-        --max-time 20 2>/dev/null || true)
-    create_response=$(cat "$create_body_file" 2>/dev/null || true)
-    rm -f "$create_body_file"
+    local created=false
 
-    if echo "$create_response" | grep -q "jwt\|Username" || echo "$create_code" | grep -qE "200|201|204|409"; then
-        log_success "? Conta admin criada (ou j? existia)."
-    else
-        log_warning "?? N?o foi poss?vel criar conta automaticamente (HTTP $create_code)"
-        log_info "?? Resposta: $create_response"
+    # Tentar criar admin usando todas as URLs candidatas (externo e interno)
+    for url in "${portainer_candidate_urls[@]}"; do
+        local create_body_file="/tmp/portainer_init_body.$$"
+        create_code=$(curl -sk -o "$create_body_file" -w "%{http_code}" -X POST \
+            "$url/api/users/admin/init" \
+            -H "Content-Type: application/json" \
+            -d "{\"Username\":\"$PORTAINER_ADMIN_USER\",\"Password\":\"$PORTAINER_ADMIN_PASSWORD\"}" \
+            --max-time 15 2>/dev/null || true)
+        create_response=$(cat "$create_body_file" 2>/dev/null || true)
+        rm -f "$create_body_file"
+
+        if echo "$create_response" | grep -q "jwt\|Username" || echo "$create_code" | grep -qE "200|201|204|409"; then
+            log_success "? Conta admin criada (ou j? existia) via $url (HTTP $create_code)."
+            created=true
+            PORTAINER_API_URL="$url"
+            break
+        else
+            log_warning "?? Tentativa de init falhou em $url (HTTP $create_code)"
+        fi
+    done
+
+    if [ "$created" != true ]; then
+        log_warning "?? N?o foi poss?vel criar conta automaticamente em nenhuma URL"
+        log_info "?? Ultima resposta: $create_response"
     fi
 
     log_info "?? Tentando login no Portainer..."
