@@ -769,11 +769,27 @@ log_success "✅ Internet funcionando!"
 
 # Gerar chaves seguras
 log_info "🔐 Gerando chaves de segurança..."
-N8N_KEY=$(openssl rand -hex 16)
-POSTGRES_PASSWORD=$(openssl rand -base64 12 | tr -d "=+/" | cut -c1-12)
-EVOLUTION_API_KEY=$(openssl rand -hex 32)
-PORTAINER_ADMIN_USER="admin"
-PORTAINER_ADMIN_PASSWORD=$(openssl rand -base64 20 | tr -d "=+/" | cut -c1-16)
+CURRENT_SSL_EMAIL="$SSL_EMAIL"
+CURRENT_DOMINIO_N8N="$DOMINIO_N8N"
+CURRENT_DOMINIO_PORTAINER="$DOMINIO_PORTAINER"
+CURRENT_WEBHOOK_N8N="$WEBHOOK_N8N"
+CURRENT_DOMINIO_EVOLUTION="$DOMINIO_EVOLUTION"
+
+if [ -f .env ]; then
+    log_info "🌐 Reutilizando segredos existentes do .env (se presentes)..."
+    source .env
+    SSL_EMAIL="$CURRENT_SSL_EMAIL"
+    DOMINIO_N8N="$CURRENT_DOMINIO_N8N"
+    DOMINIO_PORTAINER="$CURRENT_DOMINIO_PORTAINER"
+    WEBHOOK_N8N="$CURRENT_WEBHOOK_N8N"
+    DOMINIO_EVOLUTION="$CURRENT_DOMINIO_EVOLUTION"
+fi
+
+[ -z "$N8N_KEY" ] && N8N_KEY=$(openssl rand -hex 16)
+[ -z "$POSTGRES_PASSWORD" ] && POSTGRES_PASSWORD=$(openssl rand -base64 12 | tr -d "=+/" | cut -c1-12)
+[ -z "$EVOLUTION_API_KEY" ] && EVOLUTION_API_KEY=$(openssl rand -hex 32)
+[ -z "$PORTAINER_ADMIN_USER" ] && PORTAINER_ADMIN_USER="admin"
+[ -z "$PORTAINER_ADMIN_PASSWORD" ] && PORTAINER_ADMIN_PASSWORD=$(openssl rand -base64 20 | tr -d "=+/" | cut -c1-16)
 
 # Salvar variáveis de ambiente
 cat > .env <<EOF
@@ -1369,15 +1385,19 @@ create_portainer_admin_auto() {
     sleep 5
     
     # Verificar se já foi configurado
-    local check_response=$(curl -s "$portainer_url/api/users/admin/check" --insecure --max-time 5 2>/dev/null)
-    if [ "$check_response" = "true" ]; then
-        log_warning "⚠️ Portainer já configurado anteriormente"
+    local check_code
+    check_code=$(curl -s -o /dev/null -w "%{http_code}" "$portainer_url/api/users/admin/check" --insecure --max-time 5 2>/dev/null || true)
+    if [ "$check_code" = "204" ] || [ "$check_code" = "200" ] || [ "$check_code" = "true" ]; then
+        log_warning "⚠️ Portainer já configurado anteriormente (check: $check_code)"
         # Tentar fazer login para verificar se temos as credenciais corretas
         JWT_TOKEN=$(portainer_login "$portainer_url" "$PORTAINER_ADMIN_USER" "$PORTAINER_ADMIN_PASSWORD")
         if [ ! -z "$JWT_TOKEN" ]; then
             PORTAINER_API_URL="$portainer_url"
             USE_PORTAINER_API=true
-            log_success "✅ Login no Portainer realizado!"
+            log_success "✅ Login no Portainer realizado! Deploy via API ativado."
+        else
+            log_error "❌ Login no Portainer falhou com as credenciais atuais. Ajuste PORTAINER_ADMIN_USER/PORTAINER_ADMIN_PASSWORD ou resete o Portainer."
+            return 1
         fi
         return 0
     fi
