@@ -414,6 +414,7 @@ services:
     environment:
       N8N_BASIC_AUTH_ACTIVE: 'false'
       N8N_HOST: $DOMINIO_N8N
+      N8N_EDITOR_BASE_URL: https://$DOMINIO_N8N/
       N8N_PORT: 5678
       N8N_PROTOCOL: https
       WEBHOOK_URL: https://$WEBHOOK_N8N/
@@ -1970,6 +1971,7 @@ services:
       - QUEUE_HEALTH_CHECK_ACTIVE=true
       - N8N_BASIC_AUTH_ACTIVE=false
       - N8N_HOST=$DOMINIO_N8N
+      - N8N_EDITOR_BASE_URL=https://$DOMINIO_N8N/
       - N8N_PORT=5678
       - N8N_PROTOCOL=https
       - NODE_ENV=production
